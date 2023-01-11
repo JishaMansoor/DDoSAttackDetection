@@ -41,44 +41,38 @@ DEFAULT_EPOCHS = 100
 
 def build_model(dataset_name,model_name,input_shape):
     K.clear_session()
-    model_full_name=dataset_name+"-"+model_name
+    model_full_name=dataset_name+"-GM-"+model_name
     model = Sequential(name=model_full_name)
 
     if(model_name == "LSTM"):
-        model.add(LSTM(64, input_shape=input_shape,name="LSTM"))
-        model.add(Flatten())
+        model.add(LSTM(64, input_shape=input_shape,name="LSTM",return_sequences=True))
     elif (model_name == "LSTM_ATTN"):
         model.add(LSTM(64, input_shape=input_shape,return_sequences=True,name="LSTM_ATTN"))
         model.add(SeqSelfAttention(kernel_regularizer='l2', attention_type=SeqSelfAttention.ATTENTION_TYPE_MUL,name='Attention'))
-        model.add(Flatten())
         model.add(Dropout(0.5))
     elif (model_name == "BI_LSTM"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM"))
-        model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
         model.add(Dropout(0.5))
-        model.add(Flatten())
     elif (model_name == "GRU"):
-        model.add(GRU(64,input_shape=input_shape,name="GRU"))
+        model.add(GRU(64,input_shape=input_shape,name="GRU",return_sequences=True))
     elif (model_name == "BI_GRU"):
         model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU"))
-        model.add(Flatten())
     elif (model_name == "BI_GRU_ATTN"):
         model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU_ATTN"))
         model.add(SeqSelfAttention(kernel_regularizer='l2', attention_type=SeqSelfAttention.ATTENTION_TYPE_MUL,name='Attention'))
-        model.add(Flatten())
     elif (model_name == "CONVLSTM1D"):
         kernels=32
         model.add(ConvLSTM1D(kernels, (3), strides=(1), padding='valid',input_shape=input_shape, kernel_regularizer='l2', name='CONVLSTM1D'))
         model.add(Dropout(0.5))
         model.add(Activation('relu'))
-        model.add(Flatten())
     else:
         print("Unknown Model")
 
-    model.add(Dense(32, activation = 'relu', kernel_regularizer='l2'))
+    model.add(GlobalMaxPooling1D())
+    #model.add(Dense(32, activation = 'relu', kernel_regularizer='l2'))
     model.add(Dense(1, activation = 'sigmoid', kernel_regularizer='l2'))
     print(model.summary())
     model.compile(loss='binary_crossentropy',optimizer='adam',metrics=['accuracy'])
@@ -155,7 +149,7 @@ def main(argv):
 
             print ("\nCurrent dataset folder: ", dataset_folder)
             batch_size=1024
-            model_name =  dataset_name + "-"+str(args.modelname)
+            model_name =  dataset_name + "-GM-"+str(args.modelname)
             model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
             if(str(args.modelname) == "CONVLSTM1D"):
                 input_shape=(X_train.shape[1],X_train.shape[2],1)
@@ -164,10 +158,8 @@ def main(argv):
 
             if (args.incremental == True):
                 K.clear_session()
-                model = load_model(model_filename+"-Model")
-                #model = load_model(model_filename+".h5")
+                model = keras.models.load_model(model_filename+"-Model")
                 print(model.summary())
-                #model = load_model(model_filename+"-Model")
             else:
                 model=build_model(dataset_name,str(args.modelname),input_shape=input_shape)
 
@@ -291,6 +283,7 @@ def main(argv):
         time_window = int(filename_prefix.split('t-')[0])
         max_flow_len = int(filename_prefix.split('t-')[1].split('n-')[0])
         model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
+        K.clear_session()
         if("_ATTN" in model_path):
              model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
         else:
