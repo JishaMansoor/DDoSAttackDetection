@@ -1,23 +1,3 @@
-# Copyright (c) 2022 @ FBK - Fondazione Bruno Kessler
-# Author: Roberto Doriguzzi-Corin
-# Project: LUCID: A Practical, Lightweight Deep Learning Solution for DDoS Attack Detection
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-#Sample commands
-# Training: python3 lucid_cnn.py --train ./sample-dataset/  --epochs 100 -cv 5
-# Testing: python3  lucid_cnn.py --predict ./sample-dataset/ --model ./sample-dataset/10t-10n-SYN2020-LUCID.h5
-
 import tensorflow as tf
 import numpy as np
 import random as rn
@@ -32,8 +12,8 @@ rn.seed(SEED)
 config = tf.compat.v1.ConfigProto(inter_op_parallelism_threads=1)
 
 from tensorflow.keras.optimizers import Adam,SGD
-from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Conv2D,Bidirectional,LSTM
-from tensorflow.keras.layers import Dropout, GlobalMaxPooling2D
+from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Conv2D,Bidirectional,LSTM,ConvLSTM1D,GRU,concatenate
+from tensorflow.keras.layers import Dropout, GlobalMaxPooling2D,GlobalMaxPooling1D,TimeDistributed,InputLayer
 from tensorflow.keras.models import Model, Sequential, load_model, save_model
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from sklearn.utils import shuffle
@@ -41,6 +21,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from lucid_dataset_parser import *
+from keras_self_attention import SeqSelfAttention
 
 import tensorflow.keras.backend as K
 tf.random.set_seed(SEED)
@@ -56,31 +37,36 @@ PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F
 
 # hyperparameters
 PATIENCE = 10
-DEFAULT_EPOCHS = 1000
-hyperparamters = {
-    "learning_rate": [0.1,0.01,0.001],
-    "batch_size": [1024,2048],
-    "kernels": [1,2,4,8,16,32,64],
-    "regularization" : ['l1','l2'],
-    "dropout" : [0.5,0.7,0.9]
-}
-def Bi_LSTM(model_name,input_shape):
-    #input_shape,kernel_col, kernels=64,kernel_rows=3,learning_rate=0.01,regularization=None,dropout=None):
+DEFAULT_EPOCHS = 100
+
+def build_model(dataset_name,model_name,input_shape):
     K.clear_session()
-    model = Sequential(name=model_name)
-    print("input shape")
-    print(input_shape) 
-    model.add(Bidirectional(LSTM(64, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape))
-    #relu
-    #model.add(GlobalMaxPooling2D())
-    model.add(Flatten())
-    model.add(Dense(128, activation = 'relu', kernel_regularizer='l2'))
-    model.add(Dense(1, activation = 'sigmoid', kernel_regularizer='l2'))
+    model_full_name=dataset_name+"-"+model_name
+    model = Sequential(name=model_full_name)
+
+    if (model_name == "BI_LSTM_ATTN_CONCAT_BI_GRU_ATTN"):
+        model1_in= Input(shape=input_shape, name='Left_input')
+        model1 = Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN") (model1_in)
+        model1=SeqSelfAttention(attention_activation='sigmoid',name='Attention1')(model1)
+        model1 = Dropout(0.5)(model1)
+        model1 = Flatten()(model1)
+
+        model2_in = Input(shape=input_shape, name='right_input')
+        model2 = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN") (model2_in)
+        model2=SeqSelfAttention(attention_activation='sigmoid',name='Attention2')(model2)
+        model2 = Dropout(0.5)(model2)
+        model2 = Flatten()(model2)
+
+        model_concat = concatenate([model1, model2], axis=-1)
+        model_concat = Dense(32, activation='relu', name='Dense')(model_concat)
+        model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
+        model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
+
+    else:
+        print("Unknown Model")
     print(model.summary())
     model.compile(loss='binary_crossentropy',optimizer='adam',metrics=['accuracy'])
-    #print(model.summary())
     return model
-    
 
 def main(argv):
     help_string = 'Usage: python3 bi_lstm.py --train <dataset_folder> -e <epocs>'
@@ -94,6 +80,8 @@ def main(argv):
 
     parser.add_argument('-e', '--epochs', default=DEFAULT_EPOCHS, type=int,
                         help='Training iterations')
+    parser.add_argument('-mn','--modelname', default="LSTM",type=str,
+            help= 'Model Name. Available Options are LSTM ,BI_LSTM, LSTM_ATTN, BI_LSTM_ATTN, GRU, BI_GRU, BI_GRU_ATTN,CONVLSTM1D')
 
     parser.add_argument('-cv', '--cross_validation', default=0, type=int,
                         help='Number of folds for cross-validation (default 0)')
@@ -118,6 +106,8 @@ def main(argv):
 
     parser.add_argument('-y', '--dataset_type', default=None, type=str,
                         help='Type of the dataset. Available options are: DOS2017, DOS2018, DOS2019, SYN2020')
+    parser.add_argument('-g','--gmaxpool1d',default=False,type=bool,help="True for global max pooling")
+    parser.add_argument('-it','--incremental',default=False,type=bool,help="True for incremental Training")
 
     args = parser.parse_args()
 
@@ -137,8 +127,8 @@ def main(argv):
             X_train, Y_train = load_dataset(dataset_folder + "/*" + '-train.hdf5')
             X_val, Y_val = load_dataset(dataset_folder + "/*" + '-val.hdf5')
 
-            #X_train, Y_train = shuffle(X_train, Y_train, random_state=SEED)
-            #X_val, Y_val = shuffle(X_val, Y_val, random_state=SEED)
+            X_train, Y_train = shuffle(X_train, Y_train, random_state=SEED)
+            X_val, Y_val = shuffle(X_val, Y_val, random_state=SEED)
 
             # get the time_window and the flow_len from the filename
             train_file = glob.glob(dataset_folder + "/*" + '-train.hdf5')[0]
@@ -148,29 +138,41 @@ def main(argv):
             dataset_name = filename.split('-')[2].strip()
 
             print ("\nCurrent dataset folder: ", dataset_folder)
+            batch_size=1024
+            model_name =  dataset_name + "-"+str(args.modelname)
+            model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
+            if((str(args.modelname) == "CONVLSTM1D") or (str(args.modelname) == "CONVLSTM1D_ATTN")):
+                input_shape=(X_train.shape[1],X_train.shape[2],1)
+            else:
+                input_shape=(X_train.shape[1],X_train.shape[2])
 
-            model_name = dataset_name + "-BILSTM"
-            batch_size=1
-            best_model=Bi_LSTM(model_name,input_shape=(X_train.shape[1],X_train.shape[2]))
+            if (args.incremental == True):
+                K.clear_session()
+                print("incremental training")
+                model = load_model(model_filename+"-Model")
+                #model = load_model(model_filename+".h5")
+                print(model.summary())
+                #model = load_model(model_filename+"-Model")
+            else:
+                model=build_model(dataset_name,str(args.modelname),input_shape=input_shape)
+
             es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=PATIENCE)
-            best_model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
-            mc = ModelCheckpoint(best_model_filename + '.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
-            # With K-Fold cross-validation, the validation set is only used for early stopping
-            best_model.fit(X_train, Y_train, epochs=args.epochs, validation_data=(X_val, Y_val), callbacks=[es, mc])
+            model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
+            mc = ModelCheckpoint(model_filename + '.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
+            
+            model.fit([X_train,X_train], Y_train, batch_size=1024, epochs=args.epochs, validation_data=([X_val,X_val], Y_val), callbacks=[es, mc])
 
-            # We overwrite the checkpoint models with the one trained on the whole training set (not only k-1 folds)
-            best_model.save(best_model_filename + '.h5')
+            model.save(model_filename + '.h5')
+            model.save(model_filename+"-Model")
 
-            # Alternatively, to save time, one could set refit=False and load the best model from the filesystem to test its performance
-            #best_model = load_model(best_model_filename + '.h5')
 
-            Y_pred_val = (best_model.predict(X_val) > 0.5)
+            Y_pred_val = (model.predict(X_val) > 0.5)
             Y_true_val = Y_val.reshape((Y_val.shape[0], 1))
             f1_score_val = f1_score(Y_true_val, Y_pred_val)
             accuracy = accuracy_score(Y_true_val, Y_pred_val)
 
             # save best model performance on the validation set
-            val_file = open(best_model_filename + '.csv', 'w', newline='')
+            val_file = open(model_filename + '.csv', 'w', newline='')
             val_file.truncate(0)  # clean the file content (as we open the file in append mode)
             val_writer = csv.DictWriter(val_file, fieldnames=VAL_HEADER)
             val_writer.writeheader()
@@ -180,8 +182,9 @@ def main(argv):
             val_writer.writerow(row)
             val_file.close()
 
-            print("Best model path: ", best_model_filename)
+            print("Model path: ", model_filename)
             print("F1 Score of the best model on the validation set: ", f1_score_val)
+
 
     if args.predict is not None:
         predict_file = open(OUTPUT_FOLDER + 'predictions-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
@@ -203,14 +206,18 @@ def main(argv):
             model_filename = model_path.split('/')[-1].strip()
             filename_prefix = model_filename.split('-')[0].strip() + '-' + model_filename.split('-')[1].strip() + '-'
             model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
-            model = load_model(model_path)
+            K.clear_session()
+            if("_ATTN" in model_path):
+                model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
+            else:
+                model = load_model(model_path)
 
             # warming up the model (necessary for the GPU)
             warm_up_file = dataset_filelist[0]
             filename = warm_up_file.split('/')[-1].strip()
             if filename_prefix in filename:
                 X, Y = load_dataset(warm_up_file)
-                Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5)
+                Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
 
             for dataset_file in dataset_filelist:
                 filename = dataset_file.split('/')[-1].strip()
@@ -223,7 +230,7 @@ def main(argv):
                     avg_time = 0
                     for iteration in range(iterations):
                         pt0 = time.time()
-                        Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5)
+                        Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
                         pt1 = time.time()
                         avg_time += pt1 - pt0
 
@@ -269,7 +276,10 @@ def main(argv):
         time_window = int(filename_prefix.split('t-')[0])
         max_flow_len = int(filename_prefix.split('t-')[1].split('n-')[0])
         model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
-        model = load_model(args.model)
+        if("_ATTN" in model_path):
+             model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
+        else:
+             model = load_model(args.model)
 
         mins, maxs = static_min_max(time_window)
 
@@ -285,7 +295,7 @@ def main(argv):
 
                 X = np.expand_dims(X, axis=3)
                 pt0 = time.time()
-                Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5,axis=1)
+                Y_pred = np.squeeze(model.predict([X,X], batch_size=2048) > 0.5,axis=1)
                 pt1 = time.time()
                 prediction_time = pt1 - pt0
 
