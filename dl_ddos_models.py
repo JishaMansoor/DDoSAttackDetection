@@ -5,6 +5,8 @@ import os
 import csv
 import pprint
 from util_functions import *
+from collections import deque
+import time
 # Seed Random Numbers
 os.environ['PYTHONHASHSEED']=str(SEED)
 np.random.seed(SEED)
@@ -12,8 +14,8 @@ rn.seed(SEED)
 config = tf.compat.v1.ConfigProto(inter_op_parallelism_threads=1)
 
 from tensorflow.keras.optimizers import Adam,SGD
-from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Conv2D,Bidirectional,LSTM,ConvLSTM1D,GRU
-from tensorflow.keras.layers import Dropout, GlobalMaxPooling2D,GlobalMaxPooling1D,TimeDistributed
+from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Conv2D,Bidirectional,LSTM,ConvLSTM1D,GRU,concatenate
+from tensorflow.keras.layers import Dropout, GlobalMaxPooling2D,GlobalMaxPooling1D,TimeDistributed,InputLayer
 from tensorflow.keras.models import Model, Sequential, load_model, save_model
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from sklearn.utils import shuffle
@@ -22,7 +24,7 @@ from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from lucid_dataset_parser import *
 from keras_self_attention import SeqSelfAttention
-
+import dl_ddos_live_capture_thread as dl
 import tensorflow.keras.backend as K
 tf.random.set_seed(SEED)
 K.set_image_data_format('channels_last')
@@ -60,6 +62,14 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
         model.add(Dropout(0.5))
         model.add(Flatten())
+    elif (model_name == "BI_LSTM_ATTN_BI_GRU_ATTN"):
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention1'))
+        model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN_GRU"))
+        model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention2'))
+        model.add(Dropout(0.5))
+        model.add(Flatten())
+
     elif (model_name == "GRU"):
         model.add(GRU(64,input_shape=input_shape,name="GRU"))
     elif (model_name == "BI_GRU"):
@@ -77,7 +87,6 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(Flatten())
     else:
         print("Unknown Model")
-
     model.add(Dense(32, activation = 'relu', kernel_regularizer='l2'))
     model.add(Dense(1, activation = 'sigmoid', kernel_regularizer='l2'))
     print(model.summary())
@@ -97,7 +106,7 @@ def main(argv):
     parser.add_argument('-e', '--epochs', default=DEFAULT_EPOCHS, type=int,
                         help='Training iterations')
     parser.add_argument('-mn','--modelname', default="LSTM",type=str,
-            help= 'Model Name. Available Options are LSTM ,BI_LSTM, LSTM_ATTN, BI_LSTM_ATTN, GRU, BI_GRU, BI_GRU_ATTN,CONVLSTM1D')
+            help= 'Model Name. Available Options are LSTM ,BI_LSTM, LSTM_ATTN, BI_LSTM_ATTN, GRU, BI_GRU, BI_GRU_ATTN,CONVLSTM1D,BI_LSTM_ATTN_BI_GRU_ATTN')
 
     parser.add_argument('-cv', '--cross_validation', default=0, type=int,
                         help='Number of folds for cross-validation (default 0)')
@@ -164,6 +173,7 @@ def main(argv):
 
             if (args.incremental == True):
                 K.clear_session()
+                print("incremental training")
                 model = load_model(model_filename+"-Model")
                 #model = load_model(model_filename+".h5")
                 print(model.summary())
@@ -300,6 +310,7 @@ def main(argv):
 
         while (True):
             samples = process_live_traffic(cap, args.dataset_type, labels, max_flow_len, traffic_type="all", time_window=time_window)
+
             if len(samples) > 0:
                 X,Y_true,keys = dataset_to_list_of_fragments(samples)
                 X = np.array(normalize_and_padding(X, mins, maxs, max_flow_len))
@@ -321,7 +332,6 @@ def main(argv):
             elif isinstance(cap, pyshark.FileCapture) == True:
                 print("\nNo more packets in file ", data_source)
                 break
-
         predict_file.close()
 
 def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer):
