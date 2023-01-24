@@ -61,7 +61,23 @@ def build_model(dataset_name,model_name,input_shape):
         model_concat = Dense(32, activation='relu', name='Dense')(model_concat)
         model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
         model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
+    elif (model_name == "BI_LSTM_ATTN_CONCAT_GM_BI_GRU_ATTN"):
+        model1_in= Input(shape=input_shape, name='Left_input')
+        model1 = Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN") (model1_in)
+        model1=SeqSelfAttention(attention_activation='sigmoid',name='Attention1')(model1)
+        model1 = Dropout(0.5)(model1)
+        model1 = Flatten()(model1)
+        model1 =  Dense(32, activation='relu', name='Dense1')(model1)
 
+        model2_in = Input(shape=input_shape, name='right_input')
+        model2 = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN") (model2_in)
+        model2=SeqSelfAttention(attention_activation='sigmoid',name='Attention2')(model2)
+        model2 = Dropout(0.5)(model2)
+        model2 = GlobalMaxPooling1D()(model2)
+
+        model_concat = concatenate([model1, model2], axis=-1)
+        model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
+        model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
     else:
         print("Unknown Model")
     print(model.summary())
