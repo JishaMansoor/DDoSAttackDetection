@@ -1,6 +1,6 @@
 # Cyber Security: Near Real Time DDoS Cyber Attack Detection Using Deep Learning Method 
 
-DL_DDOS Models are a group of Deep Learning Models built for detecting the DDOS attack . This is based on  LUCID(Lightweight, Usable CNN in DDoS Detection) and utilizes the traffic and dataset parser. This iproject reuses the LUCID's dataset-agnostic pre-processing mechanism that produces traffic observations consistent with those collected in existing online systems, where the detection algorithms must cope with segments of traffic flows collected over pre-defined time windows.
+DL_DDOS Models are a group of Deep Learning Models built for detecting the DDOS attack . This is based on  LUCID(Lightweight, Usable CNN in DDoS Detection) and utilizes the traffic and dataset parser. This project reuses the LUCID's dataset-agnostic pre-processing mechanism that produces traffic observations consistent with those collected in existing online systems, where the detection algorithms must cope with segments of traffic flows collected over pre-defined time windows.
 
 
 ## Installation
@@ -38,7 +38,7 @@ For the sake of simplicity, we omit the command prompt ```(python39)$``` in the 
 
 ## Traffic pre-processing
 
-LUCID requires a labelled dataset, including the traffic traces in the format of ```pcap``` files. The traffic pre-processing functions are implemented in the ```lucid_dataset_parser.py``` Python script. It currently supports three DDoS datasets from the University of New Brunswick (UNB) (https://www.unb.ca/cic/datasets/index.html): CIC-IDS2017, CSE-CIC-IDS2018 and CIC-DDoS2019, plus a custom dataset containing a SYN Flood DDoS attack (SYN2020) that will be used for this guide and included in the ```sample-dataset``` folder.
+This project requires a labelled dataset, including the traffic traces in the format of ```pcap``` files. The traffic pre-processing functions are implemented in the ```lucid_dataset_parser.py``` Python script. It currently supports three DDoS datasets from the University of New Brunswick (UNB) (https://www.unb.ca/cic/datasets/index.html): CIC-IDS2017, CSE-CIC-IDS2018 and CIC-DDoS2019, plus a custom dataset containing a SYN Flood DDoS attack (SYN2020) that will be used for this guide and included in the ```sample-dataset``` folder.
 
 With term *support*, we mean the capability of the script to correctly label the packets and the traffic flows either as benign or DDoS. In general, this is done by parsing a file with the labels provided with the traffic traces, like in the case of the UNB datasets, or by manually indicating the IP address(es) of the attacker(s) and the IP address(es) of the victim(s) in the code. Of course, also in the latter case, the script must be tuned with the correct information of the traffic (all the attacker/victim pairs of IP addresses), as this information is very specific to the dataset and to the methodology used to generate the traffic. 
 
@@ -99,7 +99,7 @@ If option ```--output_folder``` is not used, the output will be produced in the 
 At the end of this operation, the script prints a summary of the pre-processed dataset. In our case, with this tiny traffic traces, the result should be something like:
 
 ```
-2020-08-27 11:02:20 | examples (tot,ben,ddos):(3518,1759,1759) | Train/Val/Test sizes: (2849,317,352) | Packets (train,val,test):(15325,1677,1761) | options:--preprocess_folder ./sample-dataset/ |
+| examples (tot,ben,ddos):(3518,1759,1759) | Train/Val/Test sizes: (2849,317,352) | Packets (train,val,test):(15325,1677,1761) | options:--preprocess_folder ./sample-dataset/ |
 ```
 
 Which means 3518 samples in total (1759 benign and 1759 DDoS), 2849 in the training set, 317 in the validation set and 352 in the test set. The output also shows the total number of packets in the dataset divided in training, validation and test sets and the options used with the script. 
@@ -201,7 +201,7 @@ Online inference can be started by executing ```dl_ddos_models.py``` followed by
 If the argument of ```predict_live``` option is a network interface, DL_MODELS will sniff the network traffic from that interface and will return the classification results every time the time window expires. The duration of the time window is automatically detected from the prefix of the model's name (e.g., ```10t``` indicates a 10-second time window). To start the inference on live traffic, use the following command:
 
 ```
-python3 dl_ddos_models.py --predict_live eth0 --model ./output/10t-10n-IDS201X-BI_LSTM_ATTN.h5 --dataset_type SYN2020 
+python3 dl_ddos_predict.py --predict_live eth0 --model ./output/10t-10n-IDS201X-BI_LSTM_ATTN.h5 --dataset_type SYN2020 
 ```
 
 Where ```eth0``` is the name of the network interface, while ```dataset_type``` indicates the address scheme of the traffic. This is optional and, as written above, it is only used to obtain the ground truth labels needed to compute the classification accuracy.
@@ -216,7 +216,7 @@ CUSTOM_DDOS_SYN = {'attackers': ['11.0.0.' + str(x) for x in range(1,255)],
 Of course, the above dictionary can be changed to meet the address scheme of the network where the experiments are executed. Alternatively, one can use the ```attack_net``` and ```victim_net``` options as follows:
 
 ```
-python3 dl_ddos_models.py --predict_live eth0 --model ./output/10t-10n-IDS201X-BI_LSTM_ATTN.h5 --attack_net 11.0.0.0/24 --victim_net 10.42.0.0/24
+python3 dl_ddos_predict.py --predict_live eth0 --model ./output/10t-10n-IDS201X-BI_LSTM_ATTN.h5 --attack_net 11.0.0.0/24 --victim_net 10.42.0.0/24
 ```
 
 Once DL Models has been started on the victim machine using one of the two examples above, we can start the attack from another host machine using one of the following scripts based on the ```mausezahn``` tool (https://github.com/uweber/mausezahn):
@@ -234,7 +234,7 @@ The output of DL MODELS on the victim machine will be similar to that reported i
 Similar to the previous case on live traffic, inference on a pre-recorded traffic trace can be started with command:
 
 ```
-python3 dl_ddos_models.py --predict_live ./sample-dataset/dataset-chunk-syn.pcap --model ./output/10t-10n-IDS201X-BI_LSTM_ATTN.h5 --dataset_type SYN2020
+python3 dl_ddos_predict.py --predict_live ./sample-dataset/dataset-chunk-syn.pcap --model ./output/10t-10n-IDS201X-BI_LSTM_ATTN.h5 --dataset_type SYN2020
 ```
 
 In this case, the argument of option ```predict_live``` must be the path to a pcap file. The script parses the file from the beginning to the end, printing the classification results every time the time window expires. The duration of the time window is automatically detected from the prefix of the model's name (e.g., ```10t``` indicates a 10-second time window). 
