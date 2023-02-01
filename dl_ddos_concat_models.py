@@ -182,7 +182,7 @@ def main(argv):
             model.save(model_filename+"-Model")
 
 
-            Y_pred_val = (model.predict(X_val) > 0.5)
+            Y_pred_val = (model.predict([X_val,X_val]) > 0.5)
             Y_true_val = Y_val.reshape((Y_val.shape[0], 1))
             f1_score_val = f1_score(Y_true_val, Y_pred_val)
             accuracy = accuracy_score(Y_true_val, Y_pred_val)
