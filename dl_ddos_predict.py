@@ -143,12 +143,14 @@ def main(argv):
         if args.predict_live is None:
             print("Please specify a valid network interface or pcap file!")
             exit(-1)
-        elif args.predict_live.endswith('.pcap'):
+        elif ((args.predict_live.endswith('.pcap')) or (args.predict_live.endswith('.pcapng'))):
             pcap_file = args.predict_live
             cap = pyshark.FileCapture(pcap_file)
             data_source = pcap_file.split('/')[-1].strip()
         else:
-            cap =  pyshark.LiveCapture(interface=args.predict_live)
+            cap =  pyshark.LiveCapture()
+            interfaces = str(args.predict_live).split(',')
+            cap.interfaces = interfaces
             data_source = args.predict_live
 
         print ("Prediction on network traffic from: ", data_source)
