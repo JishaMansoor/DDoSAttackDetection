@@ -150,7 +150,9 @@ def main(argv):
             cap = pyshark.FileCapture(pcap_file)
             data_source = pcap_file.split('/')[-1].strip()
         else:
-            cap =  pyshark.LiveCapture(interface=args.predict_live)
+            cap =  pyshark.LiveCapture()
+            interfaces = str(args.predict_live).split(',')
+            cap.interfaces = interfaces
             data_source = args.predict_live
 
         print ("Prediction on network traffic from: ", data_source)
