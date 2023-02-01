@@ -40,7 +40,9 @@ PATIENCE = 10
 DEFAULT_EPOCHS = 100
 
 def main(argv):
-    help_string = 'Usage: python3 bi_lstm.py --train <dataset_folder> -e <epocs>'
+    help_string = '''Usage: python3 dl_ddos_predict.py --predict <dataset_folder> --model <model.h5>
+                            python3 dl_ddos_predict.py --predict_live <interfacename> --model <model.h5> --dataset_type <DATASET TYPE> 
+                            python3 dl_ddos_predict.py --predict_live <pathofpcaporpcapng> --model <model.h5> --dataset_type <DATASET TYPE> ''' 
 
     parser = argparse.ArgumentParser(
         description='DDoS attacks detection with convolutional neural networks',
