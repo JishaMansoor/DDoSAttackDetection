@@ -116,6 +116,7 @@ def parse_packet(pkt):
         pf.features_list.append(int(pkt.ip.len))  # packet length
         pf.features_list.append(int(hashlib.sha256(str(pkt.highest_layer).encode('utf-8')).hexdigest(),
                                     16) % 10 ** 8)  # highest layer in the packet
+        pf.hl=str(pkt.highest_layer)
         pf.features_list.append(int(int(pkt.ip.flags, 16)))  # IP flags
         tmp_id[0] = str(pkt.ip.src)  # int(ipaddress.IPv4Address(pkt.ip.src))
         tmp_id[2] = str(pkt.ip.dst)  # int(ipaddress.IPv4Address(pkt.ip.dst))
@@ -185,7 +186,15 @@ def process_pcap(pcap_file,dataset_type,in_labels,max_flow_len,labelled_flows,ma
     apply_labels(temp_dict, labelled_flows, in_labels, traffic_type)
     print('Completed file {} in {} seconds.'.format(pcap_name, time.time() - start_time))
 
+def start_lc(cap,queue):
+    for pkt in cap.sniff_continuously():
+        queue.put(pkt)
+def start_live_capture(cap,queue):
+    capture_process = Process(target=start_lc, args=(cap,queue,))
+    capture_process.start()
+
 # Transforms live traffic into input samples for inference
+
 def process_live_traffic(cap, dataset_type, in_labels, max_flow_len, traffic_type='all',time_window=TIME_WINDOW):
     start_time = time.time()
     temp_dict = OrderedDict()
@@ -211,7 +220,6 @@ def process_live_traffic(cap, dataset_type, in_labels, max_flow_len, traffic_typ
 
     apply_labels(temp_dict,labelled_flows, in_labels,traffic_type)
     return labelled_flows
-
 def store_packet(pf,temp_dict,start_time_window, max_flow_len):
     if pf is not None:
         if pf.id_fwd in temp_dict and start_time_window in temp_dict[pf.id_fwd] and \
@@ -224,7 +232,7 @@ def store_packet(pf,temp_dict,start_time_window, max_flow_len):
                 [temp_dict[pf.id_bwd][start_time_window], pf.features_list])
         else:
             if pf.id_fwd not in temp_dict and pf.id_bwd not in temp_dict:
-                temp_dict[pf.id_fwd] = {start_time_window: np.array([pf.features_list]), 'label': 0}
+                temp_dict[pf.id_fwd] = {start_time_window: np.array([pf.features_list]), 'label': 0,'hl':pf.hl}
             elif pf.id_fwd in temp_dict and start_time_window not in temp_dict[pf.id_fwd]:
                 temp_dict[pf.id_fwd][start_time_window] = np.array([pf.features_list])
             elif pf.id_bwd in temp_dict and start_time_window not in temp_dict[pf.id_bwd]:
@@ -232,16 +240,18 @@ def store_packet(pf,temp_dict,start_time_window, max_flow_len):
     return temp_dict
 
 def apply_labels(flows, labelled_flows, labels, traffic_type):
-    for five_tuple, flow in flows.items():
+    #print("flows",flows.items())
+    for five_tuple, flow  in flows.items():
         if labels is not None:
             short_key = (five_tuple[0], five_tuple[2])  # for IDS2017/IDS2018 dataset the labels have shorter keys
             flow['label'] = labels.get(short_key, 0)
-
         for flow_key, packet_list in flow.items():
             # relative time wrt the time of the first packet in the flow
-            if flow_key != 'label':
+            if (flow_key != 'label' and flow_key != 'hl'):
                 amin = np.amin(packet_list,axis=0)[0]
                 packet_list[:, 0] = packet_list[:, 0] - amin
+            elif (flow_key=='hl'):
+                hl=packet_list
 
         if traffic_type == 'ddos' and flow['label'] == 0: # we only want malicious flows from this dataset
             continue
@@ -295,18 +305,22 @@ def dataset_to_list_of_fragments(dataset):
     keys = []
     X = []
     y = []
+    highest_layer=[]
 
     for flow in dataset:
         tuple = flow[0]
         flow_data = flow[1]
         label = flow_data['label']
+        #hl=flow[2]
+        hl=flow_data['hl']
         for key, fragment in flow_data.items():
-            if key != 'label':
+            if (key != 'label' and  key != "hl") :
                 X.append(fragment)
                 y.append(label)
                 keys.append(tuple)
+                highest_layer.append(hl)
 
-    return X,y,keys
+    return X,y,keys,highest_layer
 
 def train_test_split(flow_list,train_size=TRAIN_SIZE, shuffle=True):
     test_list = []

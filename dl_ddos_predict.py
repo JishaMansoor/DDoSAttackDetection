@@ -24,6 +24,8 @@ from lucid_dataset_parser import *
 from keras_self_attention import SeqSelfAttention
 
 import tensorflow.keras.backend as K
+import pandas as pd
+from multiprocessing import Queue
 tf.random.set_seed(SEED)
 K.set_image_data_format('channels_last')
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
@@ -38,6 +40,101 @@ PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F
 # hyperparameters
 PATIENCE = 10
 DEFAULT_EPOCHS = 100
+df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
+def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer,keys,highest_layer):
+    ddos_rate = '{:04.3f}'.format(sum(Y_pred) / Y_pred.shape[0])
+
+    if Y_true is not None and len(Y_true.shape) > 0:  # if we have the labels, we can compute the classification accuracy
+        Y_true = Y_true.reshape((Y_true.shape[0], 1))
+        accuracy = accuracy_score(Y_true, Y_pred)
+
+        f1 = f1_score(Y_true, Y_pred)
+        tn, fp, fn, tp = confusion_matrix(Y_true, Y_pred, labels=[0, 1]).ravel()
+        tnr = tn / (tn + fp)
+        fpr = fp / (fp + tn)
+        fnr = fn / (fn + tp)
+        tpr = tp / (tp + fn)
+
+        row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time), 'Packets': packets,
+               'Samples': Y_pred.shape[0], 'DDOS%': ddos_rate, 'Accuracy': '{:05.4f}'.format(accuracy), 'F1Score': '{:05.4f}'.format(f1),
+               'TPR': '{:05.4f}'.format(tpr), 'FPR': '{:05.4f}'.format(fpr), 'TNR': '{:05.4f}'.format(tnr), 'FNR': '{:05.4f}'.format(fnr), 'Source': data_source}
+    else:
+        row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time), 'Packets': packets,
+               'Samples': Y_pred.shape[0], 'DDOS%': ddos_rate, 'Accuracy': "N/A", 'F1Score': "N/A",
+               'TPR': "N/A", 'FPR': "N/A", 'TNR': "N/A", 'FNR': "N/A", 'Source': data_source}
+    pprint.pprint(row, sort_dicts=False)
+    writer.writerow(row)
+    print("suspected DDOS packets details")
+    index=0
+    #df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
+    for item in Y_pred:
+        if(item == 1):
+            new_row=pd.DataFrame([{"SourceIP":keys[index][0],"SourcePort":keys[index][1],"DestIP":keys[index][2],"DestPort":keys[index][3],"Proto":keys[index][4],"highest_layer":highest_layer[index]}])
+            df=pd.concat([new_row,df.loc[:]]).reset_index(drop=True)
+        index=index+1
+    print(df)
+
+def start_live_capture(cap,queue):
+    if isinstance(cap, pyshark.LiveCapture) == True:
+        for pkt in cap.sniff_continuously():
+            queue.put(pkt)
+    elif isinstance(cap, pyshark.FileCapture) == True:
+        while (True):
+            try:
+               pkt = cap.next()
+               queue.put(pkt)
+            except:
+               print("No more packets")
+               break
+
+def process_pcap_from_queue(queue, in_labels, max_flow_len, traffic_type='all',time_window=TIME_WINDOW):
+    start_time = time.time()
+    temp_dict = OrderedDict()
+    labelled_flows = []
+
+    start_time_window = start_time
+    time_window = start_time_window + time_window
+
+    while time.time() < time_window:
+        try:
+           pkt = queue.get()
+           if pkt is None:
+               break
+           pf = parse_packet(pkt)
+           temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
+        except:
+           break
+    apply_labels(temp_dict,labelled_flows, in_labels,traffic_type)
+    return labelled_flows
+
+def process_and_predict(queue, labels, max_flow_len, traffic_type='all',time_window=TIME_WINDOW):
+     mins, maxs = static_min_max(time_window)
+     while (True):
+            samples = process_pcap_from_queue(queue, labels, max_flow_len, traffic_type, time_window)
+            if len(samples) > 0:
+                X,Y_true,keys,highest_layer = dataset_to_list_of_fragments(samples)
+                X = np.array(normalize_and_padding(X, mins, maxs, max_flow_len))
+                if labels is not None:
+                    Y_true = np.array(Y_true)
+                else:
+                    Y_true = None
+
+                X = np.expand_dims(X, axis=3)
+                pt0 = time.time()
+                if("_CONCAT" in model_path):
+                    Y_pred = np.squeeze(model.predict([X,X], batch_size=2048) > 0.5,axis=1)
+                else:
+                    Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5,axis=1)
+                pt1 = time.time()
+                prediction_time = pt1 - pt0
+
+                [packets] = count_packets_in_dataset([X])
+                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer,keys,highest_layer)
+                predict_file.flush()
+
+            elif isinstance(cap, pyshark.FileCapture) == True:
+                print("\nNo more packets in file ", data_source)
+                break
 
 def main(argv):
     help_string = '''Usage: python3 dl_ddos_predict.py --predict <dataset_folder> --model <model.h5>
@@ -130,10 +227,11 @@ def main(argv):
 
                     avg_time = avg_time / iterations
 
-                    report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,predict_writer)
+                    report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,predict_writer,none,none)
                     predict_file.flush()
 
         predict_file.close()
+        producer_process.join()
 
     if args.predict_live is not None:
         predict_file = open(OUTPUT_FOLDER + 'predictions-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
@@ -142,21 +240,26 @@ def main(argv):
         predict_writer.writeheader()
         predict_file.flush()
 
+
         if args.predict_live is None:
             print("Please specify a valid network interface or pcap file!")
             exit(-1)
         elif ((args.predict_live.endswith('.pcap')) | (args.predict_live.endswith('.pcapng'))):
             pcap_file = args.predict_live
             cap = pyshark.FileCapture(pcap_file)
+            queue = Queue()
             data_source = pcap_file.split('/')[-1].strip()
         else:
             cap =  pyshark.LiveCapture()
+            queue = Queue()
             interfaces = str(args.predict_live).split(',')
             cap.interfaces = interfaces
             data_source = args.predict_live
-
+        capture_process = Process(target=start_live_capture, args=(cap,queue,))
+        capture_process.start()
         print ("Prediction on network traffic from: ", data_source)
 
+        
         # load the labels, if available
         labels = parse_labels(args.dataset_type, args.attack_net, args.victim_net)
 
@@ -179,11 +282,12 @@ def main(argv):
              model = load_model(args.model)
 
         mins, maxs = static_min_max(time_window)
-
+        #start_processing = Process(target=process_and_predict, args=(queue,labels, max_flow_len, "all", time_window))
+        #start_processing.start()
         while (True):
-            samples = process_live_traffic(cap, args.dataset_type, labels, max_flow_len, traffic_type="all", time_window=time_window)
+            samples = process_pcap_from_queue(queue, labels, max_flow_len, traffic_type="all", time_window=time_window)
             if len(samples) > 0:
-                X,Y_true,keys = dataset_to_list_of_fragments(samples)
+                X,Y_true,keys,highest_layer = dataset_to_list_of_fragments(samples)
                 X = np.array(normalize_and_padding(X, mins, maxs, max_flow_len))
                 if labels is not None:
                     Y_true = np.array(Y_true)
@@ -200,38 +304,19 @@ def main(argv):
                 prediction_time = pt1 - pt0
 
                 [packets] = count_packets_in_dataset([X])
-                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer)
+                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer,keys,highest_layer)
                 predict_file.flush()
 
             elif isinstance(cap, pyshark.FileCapture) == True:
                 print("\nNo more packets in file ", data_source)
                 break
+          
 
         predict_file.close()
+        capture_process.join() 
+        #start_processing.join()
+                   
 
-def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer):
-    ddos_rate = '{:04.3f}'.format(sum(Y_pred) / Y_pred.shape[0])
-
-    if Y_true is not None and len(Y_true.shape) > 0:  # if we have the labels, we can compute the classification accuracy
-        Y_true = Y_true.reshape((Y_true.shape[0], 1))
-        accuracy = accuracy_score(Y_true, Y_pred)
-
-        f1 = f1_score(Y_true, Y_pred)
-        tn, fp, fn, tp = confusion_matrix(Y_true, Y_pred, labels=[0, 1]).ravel()
-        tnr = tn / (tn + fp)
-        fpr = fp / (fp + tn)
-        fnr = fn / (fn + tp)
-        tpr = tp / (tp + fn)
-
-        row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time), 'Packets': packets,
-               'Samples': Y_pred.shape[0], 'DDOS%': ddos_rate, 'Accuracy': '{:05.4f}'.format(accuracy), 'F1Score': '{:05.4f}'.format(f1),
-               'TPR': '{:05.4f}'.format(tpr), 'FPR': '{:05.4f}'.format(fpr), 'TNR': '{:05.4f}'.format(tnr), 'FNR': '{:05.4f}'.format(fnr), 'Source': data_source}
-    else:
-        row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time), 'Packets': packets,
-               'Samples': Y_pred.shape[0], 'DDOS%': ddos_rate, 'Accuracy': "N/A", 'F1Score': "N/A",
-               'TPR': "N/A", 'FPR': "N/A", 'TNR': "N/A", 'FNR': "N/A", 'Source': data_source}
-    pprint.pprint(row, sort_dicts=False)
-    writer.writerow(row)
 
 if __name__ == "__main__":
     main(sys.argv[1:])

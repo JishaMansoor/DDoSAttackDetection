@@ -312,7 +312,7 @@ def main(argv):
             samples = process_live_traffic(cap, args.dataset_type, labels, max_flow_len, traffic_type="all", time_window=time_window)
 
             if len(samples) > 0:
-                X,Y_true,keys = dataset_to_list_of_fragments(samples)
+                X,Y_true,keys,highest_layer = dataset_to_list_of_fragments(samples)
                 X = np.array(normalize_and_padding(X, mins, maxs, max_flow_len))
                 if labels is not None:
                     Y_true = np.array(Y_true)
