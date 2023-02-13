@@ -40,7 +40,7 @@ PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F
 # hyperparameters
 PATIENCE = 10
 DEFAULT_EPOCHS = 100
-df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
+#df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
 def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer,keys,highest_layer):
     ddos_rate = '{:04.3f}'.format(sum(Y_pred) / Y_pred.shape[0])
 
@@ -66,7 +66,7 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
     writer.writerow(row)
     print("suspected DDOS packets details")
     index=0
-    #df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
+    df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
     for item in Y_pred:
         if(item == 1):
             new_row=pd.DataFrame([{"SourceIP":keys[index][0],"SourcePort":keys[index][1],"DestIP":keys[index][2],"DestPort":keys[index][3],"Proto":keys[index][4],"highest_layer":highest_layer[index]}])
@@ -84,8 +84,8 @@ def start_live_capture(cap,queue):
                pkt = cap.next()
                queue.put(pkt)
             except:
-               print("No more packets")
-               break
+               #print("No packets read")
+               pass
 
 def process_pcap_from_queue(queue, in_labels, max_flow_len, traffic_type='all',time_window=TIME_WINDOW):
     start_time = time.time()
@@ -97,44 +97,15 @@ def process_pcap_from_queue(queue, in_labels, max_flow_len, traffic_type='all',t
 
     while time.time() < time_window:
         try:
-           pkt = queue.get()
-           if pkt is None:
-               break
+           pkt = queue.get(timeout=0.5)
+           #if pkt is None:
+           #    break
            pf = parse_packet(pkt)
            temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
         except:
            break
     apply_labels(temp_dict,labelled_flows, in_labels,traffic_type)
     return labelled_flows
-
-def process_and_predict(queue, labels, max_flow_len, traffic_type='all',time_window=TIME_WINDOW):
-     mins, maxs = static_min_max(time_window)
-     while (True):
-            samples = process_pcap_from_queue(queue, labels, max_flow_len, traffic_type, time_window)
-            if len(samples) > 0:
-                X,Y_true,keys,highest_layer = dataset_to_list_of_fragments(samples)
-                X = np.array(normalize_and_padding(X, mins, maxs, max_flow_len))
-                if labels is not None:
-                    Y_true = np.array(Y_true)
-                else:
-                    Y_true = None
-
-                X = np.expand_dims(X, axis=3)
-                pt0 = time.time()
-                if("_CONCAT" in model_path):
-                    Y_pred = np.squeeze(model.predict([X,X], batch_size=2048) > 0.5,axis=1)
-                else:
-                    Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5,axis=1)
-                pt1 = time.time()
-                prediction_time = pt1 - pt0
-
-                [packets] = count_packets_in_dataset([X])
-                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer,keys,highest_layer)
-                predict_file.flush()
-
-            elif isinstance(cap, pyshark.FileCapture) == True:
-                print("\nNo more packets in file ", data_source)
-                break
 
 def main(argv):
     help_string = '''Usage: python3 dl_ddos_predict.py --predict <dataset_folder> --model <model.h5>
@@ -282,8 +253,6 @@ def main(argv):
              model = load_model(args.model)
 
         mins, maxs = static_min_max(time_window)
-        #start_processing = Process(target=process_and_predict, args=(queue,labels, max_flow_len, "all", time_window))
-        #start_processing.start()
         while (True):
             samples = process_pcap_from_queue(queue, labels, max_flow_len, traffic_type="all", time_window=time_window)
             if len(samples) > 0:
@@ -297,9 +266,9 @@ def main(argv):
                 X = np.expand_dims(X, axis=3)
                 pt0 = time.time()
                 if("_CONCAT" in model_path):
-                    Y_pred = np.squeeze(model.predict([X,X], batch_size=2048) > 0.5,axis=1)
+                    Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5,axis=1)
                 else:
-                    Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5,axis=1)
+                    Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5,axis=1)
                 pt1 = time.time()
                 prediction_time = pt1 - pt0
 
