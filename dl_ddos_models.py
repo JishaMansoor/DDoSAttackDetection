@@ -60,7 +60,7 @@ def build_model(dataset_name,model_name,input_shape):
     elif (model_name == "BI_LSTM_ATTN"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
-        model.add(Dropout(0.5))
+        #model.add(Dropout(0.5))
         model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN_BI_GRU_ATTN"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
