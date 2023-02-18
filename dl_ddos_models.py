@@ -24,7 +24,6 @@ from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from lucid_dataset_parser import *
 from keras_self_attention import SeqSelfAttention
-import dl_ddos_live_capture_thread as dl
 import tensorflow.keras.backend as K
 tf.random.set_seed(SEED)
 K.set_image_data_format('channels_last')
@@ -59,8 +58,19 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN2"))
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
-        model.add(Dropout(0.5))
+        #model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN2"))
+        #model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
+        #model.add(Dropout(0.05))
+        model.add(Flatten())
+    elif (model_name == "DL_BI_LSTM_ATTN"):
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
+        #model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN2"))
+        #model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
+        model.add(Dropout(0.05))
         model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN_BI_GRU_ATTN"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
@@ -69,7 +79,13 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention2'))
         model.add(Dropout(0.5))
         model.add(Flatten())
-
+    elif (model_name == "STACKED_BI_GRU_ATTN"):
+        model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU1"))
+        model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention1'))
+        model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU2"))
+        #model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention2'))
+        #model.add(Dropout(0.05))
+        model.add(Flatten())
     elif (model_name == "GRU"):
         model.add(GRU(64,input_shape=input_shape,name="GRU"))
     elif (model_name == "BI_GRU"):

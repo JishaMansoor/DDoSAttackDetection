@@ -26,6 +26,7 @@ from keras_self_attention import SeqSelfAttention
 import tensorflow.keras.backend as K
 import pandas as pd
 from multiprocessing import Queue
+import time
 tf.random.set_seed(SEED)
 K.set_image_data_format('channels_last')
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
@@ -36,12 +37,12 @@ OUTPUT_FOLDER = "./output/"
 
 VAL_HEADER = ['Model', 'Samples', 'Accuracy', 'F1Score', 'Hyper-parameters','Validation Set']
 PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F1Score', 'TPR', 'FPR','TNR', 'FNR', 'Source']
-
+DDOS_HEADER={"SourceIP","SourcePort","DestIP","DestPort","Proto","Highest_layer"}
 # hyperparameters
 PATIENCE = 10
 DEFAULT_EPOCHS = 100
 #df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
-def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer,keys,highest_layer):
+def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer,sd_writer,keys,highest_layer):
     ddos_rate = '{:04.3f}'.format(sum(Y_pred) / Y_pred.shape[0])
 
     if Y_true is not None and len(Y_true.shape) > 0:  # if we have the labels, we can compute the classification accuracy
@@ -64,15 +65,25 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
                'TPR': "N/A", 'FPR': "N/A", 'TNR': "N/A", 'FNR': "N/A", 'Source': data_source}
     pprint.pprint(row, sort_dicts=False)
     writer.writerow(row)
-    print("suspected DDOS packets details")
+
+    #print("suspected DDOS packets details")
     index=0
-    df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
     for item in Y_pred:
         if(item == 1):
-            new_row=pd.DataFrame([{"SourceIP":keys[index][0],"SourcePort":keys[index][1],"DestIP":keys[index][2],"DestPort":keys[index][3],"Proto":keys[index][4],"highest_layer":highest_layer[index]}])
-            df=pd.concat([new_row,df.loc[:]]).reset_index(drop=True)
+            new_row={"SourceIP":str(keys[index][0]),"SourcePort":str(keys[index][1]),"DestIP":str(keys[index][2]),"DestPort":str(keys[index][3]),"Proto":str(keys[index][4]),"Highest_layer":highest_layer[index]}
+            #pprint.pprint(new_row, sort_dicts=False)
+            #sd_writer.writerow(zip(*(new_row[h] for h in DDOS_HEADER)))
+            sd_writer.writerow(new_row)
         index=index+1
-    print(df)
+    #index=0
+    #df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
+    #for item in Y_pred:
+    #    if(item == 1):
+    #        new_row=pd.DataFrame([{"SourceIP":keys[index][0],"SourcePort":keys[index][1],"DestIP":keys[index][2],"DestPort":keys[index][3],"Proto":keys[index][4],"highest_layer":highest_layer[index]}])
+    #        df=pd.concat([new_row,df.loc[:]]).reset_index(drop=True)
+    #    index=index+1
+    
+    #print(df)
 
 def start_live_capture(cap,queue):
     if isinstance(cap, pyshark.LiveCapture) == True:
@@ -84,7 +95,7 @@ def start_live_capture(cap,queue):
                pkt = cap.next()
                queue.put(pkt)
             except:
-               #print("No packets read")
+               print("No packets read")
                pass
 
 def process_pcap_from_queue(queue, in_labels, max_flow_len, traffic_type='all',time_window=TIME_WINDOW):
@@ -210,7 +221,11 @@ def main(argv):
         predict_writer = csv.DictWriter(predict_file, fieldnames=PREDICT_HEADER)
         predict_writer.writeheader()
         predict_file.flush()
-
+        sd_file = open(OUTPUT_FOLDER + 'suspectedDdos-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
+        sd_file.truncate(0)  # clean the file content (as we open the file in append mode)
+        sd_writer = csv.DictWriter(sd_file, fieldnames=DDOS_HEADER)
+        sd_writer.writeheader()
+        sd_file.flush()
 
         if args.predict_live is None:
             print("Please specify a valid network interface or pcap file!")
@@ -227,6 +242,7 @@ def main(argv):
             cap.interfaces = interfaces
             data_source = args.predict_live
         capture_process = Process(target=start_live_capture, args=(cap,queue,))
+        capture_process.daemon = True
         capture_process.start()
         print ("Prediction on network traffic from: ", data_source)
 
@@ -253,6 +269,7 @@ def main(argv):
              model = load_model(args.model)
 
         mins, maxs = static_min_max(time_window)
+        tolerance=0
         while (True):
             samples = process_pcap_from_queue(queue, labels, max_flow_len, traffic_type="all", time_window=time_window)
             if len(samples) > 0:
@@ -273,15 +290,29 @@ def main(argv):
                 prediction_time = pt1 - pt0
 
                 [packets] = count_packets_in_dataset([X])
-                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer,keys,highest_layer)
+                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer,sd_writer,keys,highest_layer)
                 predict_file.flush()
+                sd_file.flush()
+                tolerance= 0
+            elif isinstance(cap, pyshark.LiveCapture) == True:
+                if(tolerance == 0):
+                    time.sleep(0.5)
+                    tolerance= tolerance + 1
+                    continue
+                print("No packets available")
+                capture_process.terminate()
+                time.sleep(0.1)
+                break
 
             elif isinstance(cap, pyshark.FileCapture) == True:
                 print("\nNo more packets in file ", data_source)
+                capture_process.terminate()
+                time.sleep(0.1)
                 break
           
 
         predict_file.close()
+        sd_file.close()
         capture_process.join() 
         #start_processing.join()
                    
