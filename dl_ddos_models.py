@@ -24,16 +24,11 @@ from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from lucid_dataset_parser import *
 from keras_self_attention import SeqSelfAttention
-from focal_loss import BinaryFocalLoss
-#from tensorflow.keras.losses import BinaryFocalCrossentropy
-import dl_ddos_live_capture_thread as dl
 import tensorflow.keras.backend as K
-import math
 tf.random.set_seed(SEED)
 K.set_image_data_format('channels_last')
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
-#config.log_device_placement = True  # to log device placement (on which device the operation ran)
 
 OUTPUT_FOLDER = "./output/"
 
@@ -67,9 +62,13 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM"))
         model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN"):
-        model.add(Bidirectional(LSTM(16, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
-        #model.add(Dropout(0.5))
+        model.add(Flatten())
+    elif (model_name == "STACKED_BI_LSTM_ATTN"):
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
         model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN_BI_GRU_ATTN"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
@@ -88,7 +87,11 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(LSTM(32,activation='tanh', kernel_regularizer='l2',return_sequences='true',name="LSTM"))
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention1'))
         model.add(Flatten())
-
+    elif (model_name == "STACKED_BI_GRU_ATTN"):
+        model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU1"))
+        model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention1'))
+        model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU2"))
+        model.add(Flatten())
     elif (model_name == "GRU"):
         model.add(GRU(64,input_shape=input_shape,name="GRU"))
     elif (model_name == "BI_GRU"):
@@ -109,7 +112,6 @@ def build_model(dataset_name,model_name,input_shape):
     model.add(Dense(32, activation = 'relu', kernel_regularizer='l2'))
     model.add(Dense(1, activation = 'sigmoid', kernel_regularizer='l2'))
     print(model.summary())
-    #model.compile(loss=BinaryFocalLoss(gamma=2),optimizer='adam',metrics=['accuracy'])
     model.compile(loss='binary_crossentropy',optimizer='adam',metrics=['accuracy'])
     return model
 
@@ -128,9 +130,6 @@ def main(argv):
     parser.add_argument('-mn','--modelname', default="LSTM",type=str,
             help= 'Model Name. Available Options are LSTM ,BI_LSTM, LSTM_ATTN, BI_LSTM_ATTN, GRU, BI_GRU, BI_GRU_ATTN,CONVLSTM1D,BI_LSTM_ATTN_BI_GRU_ATTN')
 
-    parser.add_argument('-cv', '--cross_validation', default=0, type=int,
-                        help='Number of folds for cross-validation (default 0)')
-
     parser.add_argument('-a', '--attack_net', default=None, type=str,
                         help='Subnet of the attacker (used to compute the detection accuracy)')
 
@@ -140,9 +139,6 @@ def main(argv):
     parser.add_argument('-p', '--predict', nargs='?', type=str,
                         help='Perform a prediction on pre-preprocessed data')
 
-    parser.add_argument('-pl', '--predict_live', nargs='?', type=str,
-                        help='Perform a prediction on live traffic')
-
     parser.add_argument('-i', '--iterations', default=1, type=int,
                         help='Predict iterations')
 
@@ -151,7 +147,7 @@ def main(argv):
 
     parser.add_argument('-y', '--dataset_type', default=None, type=str,
                         help='Type of the dataset. Available options are: DOS2017, DOS2018, DOS2019, SYN2020')
-    parser.add_argument('-g','--gmaxpool1d',default=False,type=bool,help="True for global max pooling")
+    
     parser.add_argument('-it','--incremental',default=False,type=bool,help="True for incremental Training")
 
     args = parser.parse_args()
@@ -284,74 +280,6 @@ def main(argv):
                     report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,predict_writer)
                     predict_file.flush()
 
-        predict_file.close()
-
-    if args.predict_live is not None:
-        predict_file = open(OUTPUT_FOLDER + 'predictions-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
-        predict_file.truncate(0)  # clean the file content (as we open the file in append mode)
-        predict_writer = csv.DictWriter(predict_file, fieldnames=PREDICT_HEADER)
-        predict_writer.writeheader()
-        predict_file.flush()
-
-        if args.predict_live is None:
-            print("Please specify a valid network interface or pcap file!")
-            exit(-1)
-        elif args.predict_live.endswith('.pcap'):
-            pcap_file = args.predict_live
-            cap = pyshark.FileCapture(pcap_file)
-            data_source = pcap_file.split('/')[-1].strip()
-        else:
-            cap =  pyshark.LiveCapture(interface=args.predict_live)
-            data_source = args.predict_live
-
-        print ("Prediction on network traffic from: ", data_source)
-
-        # load the labels, if available
-        labels = parse_labels(args.dataset_type, args.attack_net, args.victim_net)
-
-        # do not forget command sudo ./jetson_clocks.sh on the TX2 board before testing
-        if args.model is not None and args.model.endswith('.h5'):
-            model_path = args.model
-        else:
-            print ("No valid model specified!")
-            exit(-1)
-
-        model_filename = model_path.split('/')[-1].strip()
-        filename_prefix = model_filename.split('n')[0] + 'n-'
-        time_window = int(filename_prefix.split('t-')[0])
-        max_flow_len = int(filename_prefix.split('t-')[1].split('n-')[0])
-        model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
-        if("_ATTN" in model_path):
-             model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
-        else:
-             model = load_model(args.model)
-
-        mins, maxs = static_min_max(time_window)
-
-        while (True):
-            samples = process_live_traffic(cap, args.dataset_type, labels, max_flow_len, traffic_type="all", time_window=time_window)
-
-            if len(samples) > 0:
-                X,Y_true,keys,highest_layer = dataset_to_list_of_fragments(samples)
-                X = np.array(normalize_and_padding(X, mins, maxs, max_flow_len))
-                if labels is not None:
-                    Y_true = np.array(Y_true)
-                else:
-                    Y_true = None
-
-                X = np.expand_dims(X, axis=3)
-                pt0 = time.time()
-                Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5,axis=1)
-                pt1 = time.time()
-                prediction_time = pt1 - pt0
-
-                [packets] = count_packets_in_dataset([X])
-                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer)
-                predict_file.flush()
-
-            elif isinstance(cap, pyshark.FileCapture) == True:
-                print("\nNo more packets in file ", data_source)
-                break
         predict_file.close()
 
 def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer):
