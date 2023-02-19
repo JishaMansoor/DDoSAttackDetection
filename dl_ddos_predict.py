@@ -1,3 +1,5 @@
+#Code for Predict Live System
+
 import tensorflow as tf
 import numpy as np
 import random as rn
@@ -12,15 +14,9 @@ rn.seed(SEED)
 config = tf.compat.v1.ConfigProto(inter_op_parallelism_threads=1)
 
 from tensorflow.keras.optimizers import Adam,SGD
-from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Conv2D,Bidirectional,LSTM,ConvLSTM1D,GRU
-from tensorflow.keras.layers import Dropout, GlobalMaxPooling2D,GlobalMaxPooling1D,TimeDistributed
 from tensorflow.keras.models import Model, Sequential, load_model, save_model
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
-from sklearn.utils import shuffle
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
-from lucid_dataset_parser import *
+from dl_ddos_dataset_parser import *
 from keras_self_attention import SeqSelfAttention
 
 import tensorflow.keras.backend as K
@@ -30,7 +26,6 @@ tf.random.set_seed(SEED)
 K.set_image_data_format('channels_last')
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
-#config.log_device_placement = True  # to log device placement (on which device the operation ran)
 
 OUTPUT_FOLDER = "./output/"
 
@@ -74,6 +69,7 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
         index=index+1
     print(df)
 
+# Capturing unit
 def start_live_capture(cap,queue):
     if isinstance(cap, pyshark.LiveCapture) == True:
         for pkt in cap.sniff_continuously():
@@ -108,12 +104,12 @@ def process_pcap_from_queue(queue, in_labels, max_flow_len, traffic_type='all',t
     return labelled_flows
 
 def main(argv):
-    help_string = '''Usage: python3 dl_ddos_predict.py --predict <dataset_folder> --model <model.h5>
+    help_string = '''Usage:
                             python3 dl_ddos_predict.py --predict_live <interfacename> --model <model.h5> --dataset_type <DATASET TYPE> 
                             python3 dl_ddos_predict.py --predict_live <pathofpcaporpcapng> --model <model.h5> --dataset_type <DATASET TYPE> ''' 
 
     parser = argparse.ArgumentParser(
-        description='DDoS attacks detection with convolutional neural networks',
+        description='DDoS attacks detection with Deep Learning Models',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('-a', '--attack_net', default=None, type=str,
@@ -121,9 +117,6 @@ def main(argv):
 
     parser.add_argument('-v', '--victim_net', default=None, type=str,
                         help='Subnet of the victim (used to compute the detection accuracy)')
-
-    parser.add_argument('-p', '--predict', nargs='?', type=str,
-                        help='Perform a prediction on pre-preprocessed data')
 
     parser.add_argument('-pl', '--predict_live', nargs='?', type=str,
                         help='Perform a prediction on live traffic')
@@ -142,75 +135,12 @@ def main(argv):
     if os.path.isdir(OUTPUT_FOLDER) == False:
         os.mkdir(OUTPUT_FOLDER)
 
-    if args.predict is not None:
-        predict_file = open(OUTPUT_FOLDER + 'predictions-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
-        predict_file.truncate(0)  # clean the file content (as we open the file in append mode)
-        predict_writer = csv.DictWriter(predict_file, fieldnames=PREDICT_HEADER)
-        predict_writer.writeheader()
-        predict_file.flush()
-
-        iterations = args.iterations
-
-        dataset_filelist = glob.glob(args.predict + "/*test.hdf5")
-
-        if args.model is not None:
-            model_list = [args.model]
-        else:
-            model_list = glob.glob(args.predict + "/*.h5")
-
-        for model_path in model_list:
-            model_filename = model_path.split('/')[-1].strip()
-            filename_prefix = model_filename.split('-')[0].strip() + '-' + model_filename.split('-')[1].strip() + '-'
-            model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
-            K.clear_session()
-            if("_ATTN" in model_path):
-                model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
-            else:
-                model = load_model(model_path)
-
-            # warming up the model (necessary for the GPU)
-            warm_up_file = dataset_filelist[0]
-            filename = warm_up_file.split('/')[-1].strip()
-            if filename_prefix in filename:
-                X, Y = load_dataset(warm_up_file)
-                if("_CONCAT" in model_path):
-                     Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
-                else:
-                     Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5)
-
-            for dataset_file in dataset_filelist:
-                filename = dataset_file.split('/')[-1].strip()
-                if filename_prefix in filename:
-                    X, Y = load_dataset(dataset_file)
-                    [packets] = count_packets_in_dataset([X])
-
-                    Y_pred = None
-                    Y_true = Y
-                    avg_time = 0
-                    for iteration in range(iterations):
-                        pt0 = time.time()
-                        if("_CONCAT" in model_path):
-                             Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
-                        else:
-                             Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5)
-                        pt1 = time.time()
-                        avg_time += pt1 - pt0
-
-                    avg_time = avg_time / iterations
-
-                    report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,predict_writer,none,none)
-                    predict_file.flush()
-
-        predict_file.close()
-        producer_process.join()
-
     if args.predict_live is not None:
         predict_file = open(OUTPUT_FOLDER + 'predictions-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
         predict_file.truncate(0)  # clean the file content (as we open the file in append mode)
         predict_writer = csv.DictWriter(predict_file, fieldnames=PREDICT_HEADER)
         predict_writer.writeheader()
         predict_file.flush()
-
 
         if args.predict_live is None:
             print("Please specify a valid network interface or pcap file!")

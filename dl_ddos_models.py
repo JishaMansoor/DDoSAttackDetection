@@ -24,8 +24,11 @@ from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from lucid_dataset_parser import *
 from keras_self_attention import SeqSelfAttention
+from focal_loss import BinaryFocalLoss
+#from tensorflow.keras.losses import BinaryFocalCrossentropy
 import dl_ddos_live_capture_thread as dl
 import tensorflow.keras.backend as K
+import math
 tf.random.set_seed(SEED)
 K.set_image_data_format('channels_last')
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
@@ -49,6 +52,12 @@ def build_model(dataset_name,model_name,input_shape):
     if(model_name == "LSTM"):
         model.add(LSTM(64, input_shape=input_shape,name="LSTM"))
         model.add(Flatten())
+    elif(model_name == "CNN"):
+        input_shape=list(input_shape)
+        input_shape.append(1)
+        model.add(Conv2D(64, (3,3), strides=(1, 1), input_shape=input_shape, kernel_regularizer='l2',activation='relu', name='conv0'))
+        model.add(Conv2D(32, kernel_size=(3, 3), activation='relu'))
+        model.add(Flatten())
     elif (model_name == "LSTM_ATTN"):
         model.add(LSTM(64, input_shape=input_shape,return_sequences=True,name="LSTM_ATTN"))
         model.add(SeqSelfAttention(kernel_regularizer='l2', attention_type=SeqSelfAttention.ATTENTION_TYPE_MUL,name='Attention'))
@@ -58,9 +67,9 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM"))
         model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN"):
-        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(Bidirectional(LSTM(16, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
-        model.add(Dropout(0.5))
+        #model.add(Dropout(0.5))
         model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN_BI_GRU_ATTN"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
@@ -69,6 +78,16 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention2'))
         model.add(Dropout(0.5))
         model.add(Flatten())
+    elif (model_name == "BI_LSTM_GRU_ATTN"):
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(GRU(32,activation='tanh', kernel_regularizer='l2',return_sequences='true',name="GRU"))
+        model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention1'))
+        model.add(Flatten())
+    elif (model_name == "BI_GRU_LSTM_ATTN"):
+        model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU_ATTN"))
+        model.add(LSTM(32,activation='tanh', kernel_regularizer='l2',return_sequences='true',name="LSTM"))
+        model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention1'))
+        model.add(Flatten())
 
     elif (model_name == "GRU"):
         model.add(GRU(64,input_shape=input_shape,name="GRU"))
@@ -76,7 +95,7 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU"))
         model.add(Flatten())
     elif (model_name == "BI_GRU_ATTN"):
-        model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU_ATTN"))
+        model.add(Bidirectional(GRU(16, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU_ATTN"))
         model.add(SeqSelfAttention(kernel_regularizer='l2', attention_type=SeqSelfAttention.ATTENTION_TYPE_MUL,name='Attention'))
         model.add(Flatten())
     elif (model_name == "CONVLSTM1D"):
@@ -90,6 +109,7 @@ def build_model(dataset_name,model_name,input_shape):
     model.add(Dense(32, activation = 'relu', kernel_regularizer='l2'))
     model.add(Dense(1, activation = 'sigmoid', kernel_regularizer='l2'))
     print(model.summary())
+    #model.compile(loss=BinaryFocalLoss(gamma=2),optimizer='adam',metrics=['accuracy'])
     model.compile(loss='binary_crossentropy',optimizer='adam',metrics=['accuracy'])
     return model
 
