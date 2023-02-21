@@ -248,7 +248,7 @@ def apply_labels(flows, labelled_flows, labels, traffic_type):
         elif traffic_type == 'benign' and flow['label'] > 0: # we only want benign flows from this dataset
             continue
         else:
-            labelled_flows.append((five_tuple,flow))
+            labelled_flows.append((five_tuple,flow,amin))
 
 # returns the total number of flows
 def count_flows(preprocessed_flows):
@@ -299,6 +299,7 @@ def dataset_to_list_of_fragments(dataset):
     for flow in dataset:
         tuple = flow[0]
         flow_data = flow[1]
+        amin=flow[2]
         label = flow_data['label']
         for key, fragment in flow_data.items():
             if key != 'label':
@@ -306,7 +307,7 @@ def dataset_to_list_of_fragments(dataset):
                 y.append(label)
                 keys.append(tuple)
 
-    return X,y,keys
+    return X,y,keys,amin
 
 def train_test_split(flow_list,train_size=TRAIN_SIZE, shuffle=True):
     test_list = []
