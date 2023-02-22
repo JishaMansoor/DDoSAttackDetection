@@ -101,14 +101,13 @@ def process_pcap_from_queue(queue, in_labels, max_flow_len, traffic_type='all',t
 
     start_time_window = start_time
     time_window = start_time_window + time_window
-
     while time.time() < time_window:
         try:
            pkt = queue.get(timeout=0.5)
-           #if pkt is None:
-           #    break
            pf = parse_packet(pkt)
            temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
+           if(len(temp_dict) >2000):
+               break
         except:
            break
     apply_labels(temp_dict,labelled_flows, in_labels,traffic_type)
@@ -226,7 +225,7 @@ def main(argv):
                 sd_file.flush()
                 tolerance= 0
             elif isinstance(cap, pyshark.LiveCapture) == True:
-                if(tolerance < 3):
+                if(tolerance < 5):
                     time.sleep(0.5)
                     tolerance= tolerance + 1
                     print("tolerance 1")
