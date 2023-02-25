@@ -9,6 +9,11 @@ The DL_DDOS Models are implemented in Python v3.9 with Keras and Tensorflow 2, w
 This project is validated in Ubuntu 20.04.5 LTS (x86_64 GNU/Linux)
 Following steps are needed for bringing up the DL_DDOS Models
 
+
+sudo apt update
+
+sudo apt upgrade
+
 sudo apt-get install python3.9-dev python3.9-venv
 
 python3.9 -m venv ~/ddos/py39 
