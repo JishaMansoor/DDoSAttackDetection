@@ -66,8 +66,8 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
         model.add(Flatten())
     elif (model_name == "STACKED_BI_LSTM_ATTN"):
-        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
-        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_1"))
+        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_2"))
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
         model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN_BI_GRU_ATTN"):
@@ -98,7 +98,7 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU"))
         model.add(Flatten())
     elif (model_name == "BI_GRU_ATTN"):
-        model.add(Bidirectional(GRU(16, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU_ATTN"))
+        model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU_ATTN"))
         model.add(SeqSelfAttention(kernel_regularizer='l2', attention_type=SeqSelfAttention.ATTENTION_TYPE_MUL,name='Attention'))
         model.add(Flatten())
     elif (model_name == "CONVLSTM1D"):
@@ -112,8 +112,13 @@ def build_model(dataset_name,model_name,input_shape):
     model.add(Dense(32, activation = 'relu', kernel_regularizer='l2'))
     model.add(Dense(1, activation = 'sigmoid', kernel_regularizer='l2'))
     print(model.summary())
+    #compileModel(model,0.0001)
     model.compile(loss='binary_crossentropy',optimizer='adam',metrics=['accuracy'])
     return model
+def compileModel(model,lr):
+    # optimizer = SGD(learning_rate=lr, momentum=0.0, decay=0.0, nesterov=False)
+    optimizer = Adam(learning_rate=lr, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
+    model.compile(loss='binary_crossentropy', optimizer=optimizer,metrics=['accuracy'])  # here we specify the loss function
 
 def main(argv):
     help_string = 'Usage: python3 bi_lstm.py --train <dataset_folder> -e <epocs>'

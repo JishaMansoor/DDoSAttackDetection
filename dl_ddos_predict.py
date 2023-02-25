@@ -18,7 +18,8 @@ from tensorflow.keras.models import Model, Sequential, load_model, save_model
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from dl_ddos_dataset_parser import *
 from keras_self_attention import SeqSelfAttention
-
+from keras_multi_head import MultiHeadAttention
+from keras_multi_head import MultiHead
 import tensorflow.keras.backend as K
 import pandas as pd
 from multiprocessing import Queue
@@ -81,15 +82,22 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
     #print(df)
 
 # Capturing unit
-def start_live_capture(cap,queue):
+def start_live_capture(queue,interfaces,pcap_file):
+    if(interfaces !="None"):
+        cap =  pyshark.LiveCapture()
+        cap.interfaces = interfaces
+    else:
+        cap = pyshark.FileCapture(pcap_file)
     if isinstance(cap, pyshark.LiveCapture) == True:
         for pkt in cap.sniff_continuously():
-            queue.put(pkt)
+            pf = parse_packet(pkt)
+            queue.put(pf)
     elif isinstance(cap, pyshark.FileCapture) == True:
         while (True):
             try:
                pkt = cap.next()
-               queue.put(pkt)
+               pf = parse_packet(pkt)
+               queue.put(pf)
             except:
                print("No packets read")
                pass
@@ -103,10 +111,10 @@ def process_pcap_from_queue(queue, in_labels, max_flow_len, traffic_type='all',t
     time_window = start_time_window + time_window
     while time.time() < time_window:
         try:
-           pkt = queue.get(timeout=0.5)
-           pf = parse_packet(pkt)
+           pf = queue.get(timeout=0.5)
+           #pf = parse_packet(pkt)
            temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
-           if(len(temp_dict) >2000):
+           if(len(temp_dict) >1500):
                break
         except:
            break
@@ -162,16 +170,18 @@ def main(argv):
             exit(-1)
         elif ((args.predict_live.endswith('.pcap')) | (args.predict_live.endswith('.pcapng'))):
             pcap_file = args.predict_live
-            cap = pyshark.FileCapture(pcap_file)
+            #cap = pyshark.FileCapture(pcap_file)
             queue = Queue()
             data_source = pcap_file.split('/')[-1].strip()
+            interfaces="None"
         else:
-            cap =  pyshark.LiveCapture()
+            #cap =  pyshark.LiveCapture()
             queue = Queue()
             interfaces = str(args.predict_live).split(',')
-            cap.interfaces = interfaces
+            #cap.interfaces = interfaces
             data_source = args.predict_live
-        capture_process = Process(target=start_live_capture, args=(cap,queue,))
+            pcap_file="None"
+        capture_process = Process(target=start_live_capture, args=(queue,interfaces,pcap_file))
         capture_process.daemon = True
         capture_process.start()
         print ("Prediction on network traffic from: ", data_source)
@@ -194,7 +204,7 @@ def main(argv):
         model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
         K.clear_session()
         if("_ATTN" in model_path):
-             model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
+            model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention,"MultiHead":MultiHead})
         else:
              model = load_model(args.model)
 
@@ -213,9 +223,9 @@ def main(argv):
                 X = np.expand_dims(X, axis=3)
                 pt0 = time.time()
                 if("_CONCAT" in model_path):
-                    Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5,axis=1)
+                    Y_pred = np.squeeze(model.predict([X,X], batch_size=2048) > 0.5,axis=1)
                 else:
-                    Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5,axis=1)
+                    Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5,axis=1)
                 pt1 = time.time()
                 prediction_time = pt1 - pt0
                 latency_time=pt1-amin
@@ -224,7 +234,8 @@ def main(argv):
                 predict_file.flush()
                 sd_file.flush()
                 tolerance= 0
-            elif isinstance(cap, pyshark.LiveCapture) == True:
+            elif(interfaces != "None"):
+            #elif isinstance(cap, pyshark.LiveCapture) == True:
                 if(tolerance < 5):
                     time.sleep(0.5)
                     tolerance= tolerance + 1
@@ -234,8 +245,8 @@ def main(argv):
                 capture_process.terminate()
                 time.sleep(0.1)
                 break
-
-            elif isinstance(cap, pyshark.FileCapture) == True:
+            else:
+            #elif isinstance(cap, pyshark.FileCapture) == True:
                 print("\nNo more packets in file ", data_source)
                 capture_process.terminate()
                 time.sleep(0.1)
