@@ -12,7 +12,7 @@ rn.seed(SEED)
 config = tf.compat.v1.ConfigProto(inter_op_parallelism_threads=1)
 
 from tensorflow.keras.optimizers import Adam,SGD
-from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Conv2D,Bidirectional,LSTM,ConvLSTM1D,GRU,concatenate
+from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Conv2D,Bidirectional,LSTM,ConvLSTM1D,GRU,concatenate,BatchNormalization,LayerNormalization,Lambda, Multiply,Masking
 from tensorflow.keras.layers import Dropout, GlobalMaxPooling2D,GlobalMaxPooling1D,TimeDistributed,InputLayer
 from tensorflow.keras.models import Model, Sequential, load_model, save_model
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
@@ -47,20 +47,37 @@ def build_model(dataset_name,model_name,input_shape):
     if (model_name == "BI_LSTM_ATTN_CONCAT_BI_GRU_ATTN"):
         model1_in= Input(shape=input_shape, name='Left_input')
         model1 = Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN") (model1_in)
+        model1=LayerNormalization()(model1)
         model1=SeqSelfAttention(attention_activation='sigmoid',name='Attention1')(model1)
-        model1 = Dropout(0.5)(model1)
+        #model1 = Dropout(0.5)(model1)
         model1 = Flatten()(model1)
 
         model2_in = Input(shape=input_shape, name='right_input')
         model2 = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN") (model2_in)
+        model2 = LayerNormalization()(model2)
         model2=SeqSelfAttention(attention_activation='sigmoid',name='Attention2')(model2)
-        model2 = Dropout(0.5)(model2)
+        #model2 = Dropout(0.5)(model2)
         model2 = Flatten()(model2)
 
         model_concat = concatenate([model1, model2], axis=-1)
         model_concat = Dense(32, activation='relu', name='Dense')(model_concat)
+        model_concat = BatchNormalization()(model_concat)
         model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
         model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
+    if (model_name == "BI_LSTM_CONCAT_BI_GRU_ATTN"):
+        model1_in= Input(shape=input_shape, name='Left_input')
+        model1 = Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN") (model1_in)
+        model2_in = Input(shape=input_shape, name='right_input')
+        model2 = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN") (model2_in)
+        model_concat = concatenate([model1, model2], axis=-1)
+        model_concat =SeqSelfAttention(attention_activation='sigmoid',name='Attention1')(model_concat)
+        model_concat = Dropout(0.5)(model_concat)
+        model_concat =Flatten()(model_concat)
+        model_concat = Dense(32, activation='relu', name='Dense')(model_concat)
+        model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
+        model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
+
+
     elif (model_name == "BI_LSTM_ATTN_CONCAT_GM_BI_GRU_ATTN"):
         model1_in= Input(shape=input_shape, name='Left_input')
         model1 = Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN") (model1_in)
@@ -78,6 +95,44 @@ def build_model(dataset_name,model_name,input_shape):
         model_concat = concatenate([model1, model2], axis=-1)
         model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
         model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
+    elif (model_name =="CONV_CONCAT_BI_GRU"):
+        input_shape1=list(input_shape)
+        input_shape1.append(1)
+        model1_in= Input(shape=input_shape1, name='Left_input')
+        model1 = Conv2D(64, (3,3), strides=(1, 1), input_shape=input_shape, kernel_regularizer='l2',activation='relu', name='conv0')(model1_in)
+        model1 = GlobalMaxPooling2D()(model1)
+        model2_in = Input(shape=input_shape, name='right_input')
+        model2 = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN") (model2_in)
+        model2=SeqSelfAttention(attention_activation='sigmoid',name='Attention2')(model2)
+        model_concat = concatenate([model1, model2], axis=-1)
+        model_concat =Flatten()(model_concat)
+        #model_concat = Dense(32, activation='relu', name='Dense')(model_concat)
+        model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
+        model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
+    elif(model_name == "BI_GRU_CG"):
+        # Define the input layer
+        model_input = Input(shape=input_shape,name="input layer")
+
+        # Define the masking layer
+        masking = Masking(mask_value=0.0)(model_input)
+
+        # Define the BI_GRU layer
+        bigru = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN") (masking)
+
+        # Define the context vector
+        context = Lambda(lambda x: tf.reduce_mean(x,axis=1)) (bigru)
+
+        # Define the context gating mechanism
+        attention = Dense(units=64, activation='tanh')(context)
+        attention = Dense(units=1, activation='sigmoid')(attention)
+        attention = Multiply()([bigru, attention])
+
+        # Define the output layer
+        output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
+        output = Dense(units=1, activation='sigmoid')(output)
+
+        # Define the model
+        model = Model(inputs=model_input, outputs=output)
     else:
         print("Unknown Model")
     print(model.summary())
@@ -175,14 +230,18 @@ def main(argv):
             es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=PATIENCE)
             model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
             mc = ModelCheckpoint(model_filename + '.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
-            
-            model.fit([X_train,X_train], Y_train, batch_size=1024, epochs=args.epochs, validation_data=([X_val,X_val], Y_val), callbacks=[es, mc])
+            if("_CG" in model_filename): 
+                model.fit(X_train, Y_train, batch_size=1024, epochs=args.epochs, validation_data=(X_val, Y_val), callbacks=[es, mc])
+            else:
+                model.fit([X_train,X_train], Y_train, batch_size=1024, epochs=args.epochs, validation_data=([X_val,X_val], Y_val), callbacks=[es, mc])
 
             model.save(model_filename + '.h5')
             model.save(model_filename+"-Model")
-
-
-            Y_pred_val = (model.predict([X_val,X_val]) > 0.5)
+             
+            if("_CG" in model_filename):
+               Y_pred_val = (model.predict(X_val > 0.5))
+            else:
+               Y_pred_val = (model.predict([X_val,X_val]) > 0.5)
             Y_true_val = Y_val.reshape((Y_val.shape[0], 1))
             f1_score_val = f1_score(Y_true_val, Y_pred_val)
             accuracy = accuracy_score(Y_true_val, Y_pred_val)
@@ -233,7 +292,10 @@ def main(argv):
             filename = warm_up_file.split('/')[-1].strip()
             if filename_prefix in filename:
                 X, Y = load_dataset(warm_up_file)
-                Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
+                if("_CG" in model_path):
+                    Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5)
+                else:
+                    Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
 
             for dataset_file in dataset_filelist:
                 filename = dataset_file.split('/')[-1].strip()
@@ -246,7 +308,10 @@ def main(argv):
                     avg_time = 0
                     for iteration in range(iterations):
                         pt0 = time.time()
-                        Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
+                        if("_CG" in model_path):
+                            Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5)
+                        else:
+                            Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
                         pt1 = time.time()
                         avg_time += pt1 - pt0
 

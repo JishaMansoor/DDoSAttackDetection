@@ -18,7 +18,7 @@ from tensorflow.keras.models import Model, Sequential, load_model, save_model
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from dl_ddos_dataset_parser import *
 from keras_self_attention import SeqSelfAttention
-
+from keras_multi_head import MultiHead
 import tensorflow.keras.backend as K
 import pandas as pd
 from multiprocessing import Queue
@@ -195,7 +195,7 @@ def main(argv):
         model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
         K.clear_session()
         if("_ATTN" in model_path):
-             model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
+             model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention,"MultiHead":MultiHead})
         else:
              model = load_model(args.model)
 
