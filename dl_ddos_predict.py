@@ -6,6 +6,7 @@ import random as rn
 import os
 import csv
 import pprint
+import openpyxl
 from util_functions import *
 # Seed Random Numbers
 os.environ['PYTHONHASHSEED']=str(SEED)
@@ -37,10 +38,11 @@ DDOS_HEADER={"SourceIP","SourcePort","DestIP","DestPort","Proto","Highest_layer"
 # hyperparameters
 PATIENCE = 10
 DEFAULT_EPOCHS = 100
+#df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","Highest_layer"])
 #df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
-def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time,latency_time, writer,sd_writer,keys,highest_layer):
+def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time,latency_time, writer,filename,keys,highest_layer):
     ddos_rate = '{:04.3f}'.format(sum(Y_pred) / Y_pred.shape[0])
-
+    df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
     if Y_true is not None and len(Y_true.shape) > 0:  # if we have the labels, we can compute the classification accuracy
         Y_true = Y_true.reshape((Y_true.shape[0], 1))
         accuracy = accuracy_score(Y_true, Y_pred)
@@ -63,26 +65,19 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
     writer.writerow(row)
 
     #print("suspected DDOS packets details")
+    #df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","Highest_layer"])
     index=0
     for item in Y_pred:
         if(item == 1):
-            new_row={"SourceIP":str(keys[index][0]),"SourcePort":str(keys[index][1]),"DestIP":str(keys[index][2]),"DestPort":str(keys[index][3]),"Proto":str(keys[index][4]),"Highest_layer":highest_layer[index]}
-            #pprint.pprint(new_row, sort_dicts=False)
-            #sd_writer.writerow(zip(*(new_row[h] for h in DDOS_HEADER)))
-            sd_writer.writerow(new_row)
+            new_row=pd.DataFrame([{"SourceIP":str(keys[index][0]),"SourcePort":str(keys[index][1]),"DestIP":str(keys[index][2]),"DestPort":str(keys[index][3]),"Proto":str(keys[index][4]),"Highest_layer":highest_layer[index]}])
+            #sd_writer.writerow(new_row)
+            df=pd.concat([df,new_row])
         index=index+1
-    #index=0
-    #df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","highest_layer"])
-    #for item in Y_pred:
-    #    if(item == 1):
-    #        new_row=pd.DataFrame([{"SourceIP":keys[index][0],"SourcePort":keys[index][1],"DestIP":keys[index][2],"DestPort":keys[index][3],"Proto":keys[index][4],"highest_layer":highest_layer[index]}])
-    #        df=pd.concat([new_row,df.loc[:]]).reset_index(drop=True)
-    #    index=index+1
-    
-    #print(df)
+    df.to_csv(filename,mode='a', index=False, header=False)
 
 # Capturing unit
 def start_live_capture(queue,interfaces,pcap_file):
+    pkt_count=0
     if(interfaces !="None"):
         cap =  pyshark.LiveCapture()
         cap.interfaces = interfaces
@@ -98,11 +93,13 @@ def start_live_capture(queue,interfaces,pcap_file):
                pkt = cap.next()
                pf = parse_packet(pkt)
                queue.put(pf)
+               pkt_count = pkt_count + 1
+               #print(pkt_count,pkt_count)
             except:
                print("No packets read")
                pass
 
-def process_pcap_from_queue(queue, in_labels, max_flow_len, traffic_type='all',time_window=TIME_WINDOW):
+def process_pcap_from_queue(queue, in_labels, max_flow_len,traffic_type='all',time_window=TIME_WINDOW):
     start_time = time.time()
     temp_dict = OrderedDict()
     labelled_flows = []
@@ -115,9 +112,10 @@ def process_pcap_from_queue(queue, in_labels, max_flow_len, traffic_type='all',t
            #pf = parse_packet(pkt)
            temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
            if(len(temp_dict) >1500):
+               print("Suspecting Volumteric attack")
                break
         except:
-           break
+            break
     apply_labels(temp_dict,labelled_flows, in_labels,traffic_type)
     return labelled_flows
 
@@ -159,11 +157,16 @@ def main(argv):
         predict_writer = csv.DictWriter(predict_file, fieldnames=PREDICT_HEADER)
         predict_writer.writeheader()
         predict_file.flush()
-        sd_file = open(OUTPUT_FOLDER + 'suspectedDdos-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
-        sd_file.truncate(0)  # clean the file content (as we open the file in append mode)
-        sd_writer = csv.DictWriter(sd_file, fieldnames=DDOS_HEADER)
-        sd_writer.writeheader()
-        sd_file.flush()
+        csvfilename=OUTPUT_FOLDER + 'suspectedDdos-' + time.strftime("%Y%m%d-%H%M%S") + '.csv'
+        df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","Highest_layer"])
+        df.to_csv(csvfilename)
+        #sd_writer=pd.ExcelWriter(OUTPUT_FOLDER + 'suspectedDdos-' + time.strftime("%Y%m%d-%H%M%S") + '.csv')
+
+        #sd_file = open(OUTPUT_FOLDER + 'suspectedDdos-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
+        #sd_file.truncate(0)  # clean the file content (as we open the file in append mode)
+        #sd_writer = csv.DictWriter(sd_file, fieldnames=DDOS_HEADER)
+        #sd_writer.writeheader()
+        #sd_file.flush()
 
         if args.predict_live is None:
             print("Please specify a valid network interface or pcap file!")
@@ -230,31 +233,34 @@ def main(argv):
                 prediction_time = pt1 - pt0
                 latency_time=pt1-amin
                 [packets] = count_packets_in_dataset([X])
-                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,latency_time,predict_writer,sd_writer,keys,highest_layer)
+                #print("packets",packets)
+                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,latency_time,predict_writer,csvfilename,keys,highest_layer)
                 predict_file.flush()
-                sd_file.flush()
+                #sd_file.flush()
                 tolerance= 0
-            elif(interfaces != "None"):
+
+            else:
+            #elif(interfaces != "None"):
             #elif isinstance(cap, pyshark.LiveCapture) == True:
                 if(tolerance < 5):
                     time.sleep(0.5)
                     tolerance= tolerance + 1
-                    print("tolerance 1")
+                    #print("tolerance 1")
                     continue
                 print("No packets available")
                 capture_process.terminate()
                 time.sleep(0.1)
                 break
-            else:
+            #else:
             #elif isinstance(cap, pyshark.FileCapture) == True:
-                print("\nNo more packets in file ", data_source)
-                capture_process.terminate()
-                time.sleep(0.1)
-                break
+            #    print("\nNo more packets in file ", data_source)
+            #    capture_process.terminate()
+            #    time.sleep(0.1)
+            #    break
           
 
         predict_file.close()
-        sd_file.close()
+        #sd_file.close()
         capture_process.join() 
         #start_processing.join()
                    
