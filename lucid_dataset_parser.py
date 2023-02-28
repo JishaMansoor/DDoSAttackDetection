@@ -152,7 +152,7 @@ def parse_packet(pkt):
 
         pf.id_fwd = (tmp_id[0], tmp_id[1], tmp_id[2], tmp_id[3], tmp_id[4])
         pf.id_bwd = (tmp_id[2], tmp_id[3], tmp_id[0], tmp_id[1], tmp_id[4])
-
+        pf.ctime=time.time()
         return pf
 
     except AttributeError as e:
@@ -209,7 +209,9 @@ def process_live_traffic(cap, dataset_type, in_labels, max_flow_len, traffic_typ
             except:
                 break
 
+    print("temp_dict",len(temp_dict))
     apply_labels(temp_dict,labelled_flows, in_labels,traffic_type)
+    print("len labeeled_flow", len(labelled_flows))
     return labelled_flows
 
 def store_packet(pf,temp_dict,start_time_window, max_flow_len):
@@ -224,7 +226,7 @@ def store_packet(pf,temp_dict,start_time_window, max_flow_len):
                 [temp_dict[pf.id_bwd][start_time_window], pf.features_list])
         else:
             if pf.id_fwd not in temp_dict and pf.id_bwd not in temp_dict:
-                temp_dict[pf.id_fwd] = {start_time_window: np.array([pf.features_list]), 'label': 0}
+                temp_dict[pf.id_fwd] = {start_time_window: np.array([pf.features_list]), 'label': 0,'time':pf.ctime}
             elif pf.id_fwd in temp_dict and start_time_window not in temp_dict[pf.id_fwd]:
                 temp_dict[pf.id_fwd][start_time_window] = np.array([pf.features_list])
             elif pf.id_bwd in temp_dict and start_time_window not in temp_dict[pf.id_bwd]:
@@ -239,7 +241,7 @@ def apply_labels(flows, labelled_flows, labels, traffic_type):
 
         for flow_key, packet_list in flow.items():
             # relative time wrt the time of the first packet in the flow
-            if flow_key != 'label':
+            if (flow_key != 'label' and flow_key != 'time'):
                 amin = np.amin(packet_list,axis=0)[0]
                 packet_list[:, 0] = packet_list[:, 0] - amin
 
@@ -295,18 +297,20 @@ def dataset_to_list_of_fragments(dataset):
     keys = []
     X = []
     y = []
-
+    ctime=-1
     for flow in dataset:
         tuple = flow[0]
         flow_data = flow[1]
         label = flow_data['label']
+        if(ctime == -1):
+            ctime=flow_data['time']
         for key, fragment in flow_data.items():
-            if key != 'label':
+            if (key != 'label' and key !='time'):
                 X.append(fragment)
                 y.append(label)
                 keys.append(tuple)
 
-    return X,y,keys
+    return X,y,keys,ctime
 
 def train_test_split(flow_list,train_size=TRAIN_SIZE, shuffle=True):
     test_list = []

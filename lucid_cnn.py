@@ -52,7 +52,7 @@ config.gpu_options.allow_growth = True  # dynamically grow the memory used on th
 OUTPUT_FOLDER = "./output/"
 
 VAL_HEADER = ['Model', 'Samples', 'Accuracy', 'F1Score', 'Hyper-parameters','Validation Set']
-PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F1Score', 'TPR', 'FPR','TNR', 'FNR', 'Source']
+PREDICT_HEADER = ['Model', 'Time','Latency Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F1Score', 'TPR', 'FPR','TNR', 'FNR', 'Source']
 
 # hyperparameters
 PATIENCE = 10
@@ -290,7 +290,7 @@ def main(argv):
         while (True):
             samples = process_live_traffic(cap, args.dataset_type, labels, max_flow_len, traffic_type="all", time_window=time_window)
             if len(samples) > 0:
-                X,Y_true,keys = dataset_to_list_of_fragments(samples)
+                X,Y_true,key,amin = dataset_to_list_of_fragments(samples)
                 X = np.array(normalize_and_padding(X, mins, maxs, max_flow_len))
                 if labels is not None:
                     Y_true = np.array(Y_true)
@@ -302,9 +302,10 @@ def main(argv):
                 Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5,axis=1)
                 pt1 = time.time()
                 prediction_time = pt1 - pt0
+                latency_time = pt1-amin
 
                 [packets] = count_packets_in_dataset([X])
-                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer)
+                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,latency_time,predict_writer)
                 predict_file.flush()
 
             elif isinstance(cap, pyshark.FileCapture) == True:
@@ -313,7 +314,7 @@ def main(argv):
 
         predict_file.close()
 
-def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer):
+def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time,latency_time, writer):
     ddos_rate = '{:04.3f}'.format(sum(Y_pred) / Y_pred.shape[0])
 
     if Y_true is not None and len(Y_true.shape) > 0:  # if we have the labels, we can compute the classification accuracy
@@ -327,11 +328,11 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
         fnr = fn / (fn + tp)
         tpr = tp / (tp + fn)
 
-        row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time), 'Packets': packets,
+        row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time), 'Latency Time': '{:04.3f}'.format(latency_time),'Packets': packets,
                'Samples': Y_pred.shape[0], 'DDOS%': ddos_rate, 'Accuracy': '{:05.4f}'.format(accuracy), 'F1Score': '{:05.4f}'.format(f1),
                'TPR': '{:05.4f}'.format(tpr), 'FPR': '{:05.4f}'.format(fpr), 'TNR': '{:05.4f}'.format(tnr), 'FNR': '{:05.4f}'.format(fnr), 'Source': data_source}
     else:
-        row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time), 'Packets': packets,
+        row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time),'Latency Time': '{:04.3f}'.format(latency_time), 'Packets': packets,
                'Samples': Y_pred.shape[0], 'DDOS%': ddos_rate, 'Accuracy': "N/A", 'F1Score': "N/A",
                'TPR': "N/A", 'FPR': "N/A", 'TNR': "N/A", 'FNR': "N/A", 'Source': data_source}
     pprint.pprint(row, sort_dicts=False)
