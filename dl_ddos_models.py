@@ -48,21 +48,6 @@ def build_model(dataset_name,model_name,input_shape):
     if(model_name == "LSTM"):
         model.add(LSTM(64, input_shape=input_shape,name="LSTM"))
         model.add(Flatten())
-    elif(model_name == "CNN"):
-        input_shape=list(input_shape)
-        input_shape.append(1)
-        model.add(Conv2D(64, (3,3), strides=(1, 1), input_shape=input_shape, kernel_regularizer='l2',activation='relu', name='conv0'))
-        model.add(Conv2D(32, kernel_size=(3, 3), activation='relu'))
-        model.add(Flatten())
-    elif (model_name == "CNN_MH"):
-        input_shape=list(input_shape)
-        input_shape.append(1)
-        model.add(MultiHead(
-        layer=Conv2D(filters=64, kernel_size=3,  strides=(1, 1),padding='same',activation='relu'), 
-        input_shape=input_shape,layer_num=5,
-        reg_index=[1, 4],
-        reg_slice=(slice(None, None), slice(32, 48)),
-        reg_factor=0.1,name='Multi-CNNs'))
     elif (model_name == "LSTM_ATTN"):
         model.add(LSTM(64, input_shape=input_shape,return_sequences=True,name="LSTM_ATTN"))
         model.add(SeqSelfAttention(kernel_regularizer='l2', attention_type=SeqSelfAttention.ATTENTION_TYPE_MUL,name='Attention'))
@@ -74,32 +59,6 @@ def build_model(dataset_name,model_name,input_shape):
     elif (model_name == "BI_LSTM_ATTN"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
-        model.add(Flatten())
-    elif(model_name== "BI_LSTM_MH_ATTN"):
-        model.add(MultiHead(
-        layer=Bidirectional(LSTM(units=32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name='BI_LSTM'),
-        input_shape=input_shape,
-        layer_num=3,
-        reg_index=[1],
-        #reg_index=[1, 4],
-        #reg_slice=(slice(None, None), slice(32, 48)),
-        #reg_slice=(slice(None, None), slice(6, 10)),
-        reg_factor=0.1,
-        name='Multi-Head',
-        ))
-        #model.add(LayerNormalization())
-        #model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention'))
-        model.add(Flatten(name='Flatten'))
-        #model.add(BatchNormalization())
-
-    elif (model_name == "STACKED_BI_LSTM_ATTN"):
-        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_1"))
-        #model.add(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true',name="LSTM_1"))
-        model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_2"))
-        model.add(SeqSelfAttention(attention_activation='sigmoid',kernel_regularizer='l2',
-                       bias_regularizer='l1',
-                       attention_regularizer_weight=1e-4,name='Attention1'))
-        model.add(Dropout(0.5))
         model.add(Flatten())
     elif (model_name == "BI_LSTM_ATTN_BI_GRU_ATTN"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
