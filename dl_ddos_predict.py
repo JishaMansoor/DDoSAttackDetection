@@ -77,6 +77,7 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
 
 # Capturing unit
 def start_live_capture(queue,interfaces,pcap_file):
+
     pkt_count=0
     if(interfaces !="None"):
         cap =  pyshark.LiveCapture()
@@ -84,9 +85,14 @@ def start_live_capture(queue,interfaces,pcap_file):
     else:
         cap = pyshark.FileCapture(pcap_file)
     if isinstance(cap, pyshark.LiveCapture) == True:
-        for pkt in cap.sniff_continuously():
-            pf = parse_packet(pkt)
-            queue.put(pf)
+        while(True):
+            start_time = time.time()
+            time_window =start_time +10 
+            for pkt in cap.sniff_continuously():
+               pf = parse_packet(pkt)
+               queue.put(pf)
+               if time.time() >= time_window:
+                  break
     elif isinstance(cap, pyshark.FileCapture) == True:
         while (True):
             try:
@@ -111,7 +117,7 @@ def process_pcap_from_queue(queue, in_labels, max_flow_len,traffic_type='all',ti
            pf = queue.get(timeout=0.5)
            #pf = parse_packet(pkt)
            temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
-           if(len(temp_dict) >1500):
+           if(len(temp_dict) >500):
                print("Suspecting Volumteric attack")
                break
         except:
