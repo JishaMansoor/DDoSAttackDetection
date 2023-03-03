@@ -209,9 +209,7 @@ def process_live_traffic(cap, dataset_type, in_labels, max_flow_len, traffic_typ
             except:
                 break
 
-    print("temp_dict",len(temp_dict))
     apply_labels(temp_dict,labelled_flows, in_labels,traffic_type)
-    print("len labeeled_flow", len(labelled_flows))
     return labelled_flows
 
 def store_packet(pf,temp_dict,start_time_window, max_flow_len):
