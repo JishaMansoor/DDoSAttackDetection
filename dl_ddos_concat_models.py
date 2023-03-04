@@ -111,13 +111,13 @@ def build_model(dataset_name,model_name,input_shape):
         model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
     elif(model_name == "BI_GRU_CG"):
         # Define the input layer
-        model_input = Input(shape=input_shape,name="input layer")
+        model_input = Input(shape=input_shape,name="inputlayer")
 
         # Define the masking layer
         masking = Masking(mask_value=0.0)(model_input)
 
         # Define the BI_GRU layer
-        bigru = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN") (masking)
+        bigru = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU") (masking)
 
         # Define the context vector
         context = Lambda(lambda x: tf.reduce_mean(x,axis=1)) (bigru)
@@ -126,6 +126,27 @@ def build_model(dataset_name,model_name,input_shape):
         attention = Dense(units=64, activation='tanh')(context)
         attention = Dense(units=1, activation='sigmoid')(attention)
         attention = Multiply()([bigru, attention])
+
+        # Define the output layer
+        output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
+        output = Dense(units=1, activation='sigmoid')(output)
+
+        # Define the model
+        model = Model(inputs=model_input, outputs=output)
+    elif(model_name == "STACKED_BI_LSTM_CG"):
+        model_input = Input(shape=input_shape,name="inputlayer")
+        masking = Masking(mask_value=0.0)(model_input)
+        bl=Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_1")(masking)
+        bl=LayerNormalization()(bl)
+        bl=Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_2")(bl)
+        bl=LayerNormalization()(bl)
+        # Define the context vector
+        context = Lambda(lambda x: tf.reduce_mean(x,axis=1)) (bl)
+
+        # Define the context gating mechanism
+        attention = Dense(units=64, activation='tanh')(context)
+        attention = Dense(units=1, activation='sigmoid')(attention)
+        attention = Multiply()([bl, attention])
 
         # Define the output layer
         output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
