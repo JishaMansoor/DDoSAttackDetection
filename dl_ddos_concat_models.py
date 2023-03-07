@@ -133,6 +133,31 @@ def build_model(dataset_name,model_name,input_shape):
 
         # Define the model
         model = Model(inputs=model_input, outputs=output)
+    elif(model_name == "BI_GRU_CG_L"):
+        # Define the input layer
+        model_input = Input(shape=input_shape,name="inputlayer")
+
+        # Define the masking layer
+        masking = Masking(mask_value=0.0)(model_input)
+
+        # Define the BI_GRU layer
+        bigru = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU") (masking)
+        bigru = LayerNormalization()(bigru)
+        # Define the context vector
+        context = Lambda(lambda x: tf.reduce_mean(x,axis=1)) (bigru)
+
+        # Define the context gating mechanism
+        attention = Dense(units=64, activation='tanh')(context)
+        #attention=LayerNormalization()(attention)
+        attention = Dense(units=1, activation='sigmoid')(attention)
+        attention = Multiply()([bigru, attention])
+        attention=LayerNormalization()(attention)
+        # Define the output layer
+        output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
+        output = Dense(units=1, activation='sigmoid')(output)
+
+        # Define the model
+        model = Model(inputs=model_input, outputs=output)
     elif(model_name == "STACKED_BI_LSTM_CG"):
         model_input = Input(shape=input_shape,name="inputlayer")
         masking = Masking(mask_value=0.0)(model_input)
@@ -147,6 +172,48 @@ def build_model(dataset_name,model_name,input_shape):
         attention = Dense(units=64, activation='tanh')(context)
         attention = Dense(units=1, activation='sigmoid')(attention)
         attention = Multiply()([bl, attention])
+
+        # Define the output layer
+        output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
+        output = Dense(units=1, activation='sigmoid')(output)
+
+        # Define the model
+        model = Model(inputs=model_input, outputs=output)
+    elif(model_name == "STACKED_BLBG_CG"):
+        model_input = Input(shape=input_shape,name="inputlayer")
+        masking = Masking(mask_value=0.0)(model_input)
+        bl=Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_1")(masking)
+        bl=LayerNormalization()(bl)
+        bl=Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="gru")(bl)
+        bl=LayerNormalization()(bl)
+        # Define the context vector
+        context = Lambda(lambda x: tf.reduce_mean(x,axis=1)) (bl)
+
+        # Define the context gating mechanism
+        attention = Dense(units=64, activation='tanh')(context)
+        attention = Dense(units=1, activation='sigmoid')(attention)
+        attention = Multiply()([bl, attention])
+
+        # Define the output layer
+        output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
+        output = Dense(units=1, activation='sigmoid')(output)
+
+        # Define the model
+        model = Model(inputs=model_input, outputs=output)
+    elif (model_name == "CONVLSTM1D_CG"):
+        model_input = Input(shape=input_shape,name="inputlayer")
+        masking = Masking(mask_value=0.0)(model_input)
+        kernels=32
+        conv=ConvLSTM1D(kernels, (3), strides=(1), padding='valid',kernel_regularizer='l2', name='CONVLSTM1D')(masking)
+        conv=Activation('relu')(conv)
+        conv=LayerNormalization()(conv)
+        # Define the context vector
+        context = Lambda(lambda x: tf.reduce_mean(x,axis=1)) (conv)
+
+        # Define the context gating mechanism
+        attention = Dense(units=64, activation='tanh')(context)
+        attention = Dense(units=1, activation='sigmoid')(attention)
+        attention = Multiply()([conv, attention])
 
         # Define the output layer
         output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
@@ -233,7 +300,7 @@ def main(argv):
             batch_size=1024
             model_name =  dataset_name + "-"+str(args.modelname)
             model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
-            if((str(args.modelname) == "CONVLSTM1D") or (str(args.modelname) == "CONVLSTM1D_ATTN")):
+            if((str(args.modelname) == "CONVLSTM1D_CG") or (str(args.modelname) == "CONVLSTM1D_ATTN")):
                 input_shape=(X_train.shape[1],X_train.shape[2],1)
             else:
                 input_shape=(X_train.shape[1],X_train.shape[2])
@@ -260,7 +327,7 @@ def main(argv):
             model.save(model_filename+"-Model")
              
             if("_CG" in model_filename):
-               Y_pred_val = (model.predict(X_val > 0.5))
+               Y_pred_val = (model.predict(X_val) > 0.5)
             else:
                Y_pred_val = (model.predict([X_val,X_val]) > 0.5)
             Y_true_val = Y_val.reshape((Y_val.shape[0], 1))

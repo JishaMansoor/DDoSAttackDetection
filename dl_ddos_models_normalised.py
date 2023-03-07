@@ -87,6 +87,12 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(LayerNormalization())
         model.add(Dropout(0.5))
         model.add(Flatten())
+    elif(model_name == "BI_GRU_ATTN_L"):
+        model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU_ATTN"))
+        model.add(LayerNormalization())
+        model.add(SeqSelfAttention(kernel_regularizer='l2', attention_type=SeqSelfAttention.ATTENTION_TYPE_MUL,name='Attention'))
+        model.add(LayerNormalization())
+        model.add(Flatten())
     else:
         print("Unknown Model")
     model.add(Dense(32, activation = 'relu', kernel_regularizer='l2'))
