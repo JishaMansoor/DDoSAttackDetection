@@ -25,6 +25,7 @@ import tensorflow.keras.backend as K
 import pandas as pd
 from multiprocessing import Queue
 import time
+import datetime
 tf.random.set_seed(SEED)
 K.set_image_data_format('channels_last')
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
@@ -64,17 +65,21 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
     pprint.pprint(row, sort_dicts=False)
     writer.writerow(row)
 
-    #print("suspected DDOS packets details")
-    #df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","Highest_layer"])
     index=0
     for item in Y_pred:
         if(item == 1):
             new_row=pd.DataFrame([{"SourceIP":str(keys[index][0]),"SourcePort":str(keys[index][1]),"DestIP":str(keys[index][2]),"DestPort":str(keys[index][3]),"Proto":str(keys[index][4]),"Highest_layer":highest_layer[index]}])
-            #sd_writer.writerow(new_row)
             df=pd.concat([df,new_row])
         index=index+1
     df.to_csv(filename,mode='a', index=False, header=False)
 
+def start_pcap_capture(interfaces):
+    file=OUTPUT_FOLDER + 'captures-' + time.strftime("%Y%m%d-%H%M%S") +".pcap"
+    output = open(file, "w")
+    timeouttime = 60
+    capture = pyshark.LiveCapture(interface=interfaces, output_file=file)
+    capture.sniff(timeout=timeouttime)
+    output.close()
 # Capturing unit
 def start_live_capture(queue,interfaces,pcap_file):
 
@@ -87,7 +92,7 @@ def start_live_capture(queue,interfaces,pcap_file):
     if isinstance(cap, pyshark.LiveCapture) == True:
         while(True):
             start_time = time.time()
-            time_window =start_time +10 
+            time_window =start_time +20 
             for pkt in cap.sniff_continuously():
                pf = parse_packet(pkt)
                queue.put(pf)
@@ -102,7 +107,7 @@ def start_live_capture(queue,interfaces,pcap_file):
                pkt_count = pkt_count + 1
                #print(pkt_count,pkt_count)
             except:
-               print("No packets read")
+               #print("No packets read")
                pass
 
 def process_pcap_from_queue(queue, in_labels, max_flow_len,traffic_type='all',time_window=TIME_WINDOW):
@@ -166,13 +171,6 @@ def main(argv):
         csvfilename=OUTPUT_FOLDER + 'suspectedDdos-' + time.strftime("%Y%m%d-%H%M%S") + '.csv'
         df=pd.DataFrame(columns=["SourceIP","SourcePort","DestIP","DestPort","Proto","Highest_layer"])
         df.to_csv(csvfilename)
-        #sd_writer=pd.ExcelWriter(OUTPUT_FOLDER + 'suspectedDdos-' + time.strftime("%Y%m%d-%H%M%S") + '.csv')
-
-        #sd_file = open(OUTPUT_FOLDER + 'suspectedDdos-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
-        #sd_file.truncate(0)  # clean the file content (as we open the file in append mode)
-        #sd_writer = csv.DictWriter(sd_file, fieldnames=DDOS_HEADER)
-        #sd_writer.writeheader()
-        #sd_file.flush()
 
         if args.predict_live is None:
             print("Please specify a valid network interface or pcap file!")
@@ -219,6 +217,7 @@ def main(argv):
 
         mins, maxs = static_min_max(time_window)
         tolerance=0
+        capturing_packet = False
         while (True):
             samples = process_pcap_from_queue(queue, labels, max_flow_len, traffic_type="all", time_window=time_window)
             if len(samples) > 0:
@@ -244,12 +243,16 @@ def main(argv):
                 predict_file.flush()
                 #sd_file.flush()
                 tolerance= 0
+                ddos_rate = (sum(Y_pred) / Y_pred.shape[0])
+                if((interfaces != "None") and (ddos_rate > .01 )and (capturing_packet == False)):
+                    capturing_packet= True
+                    pcap_capture_process = Process(target=start_pcap_capture, args=(interfaces))
+                    pcap_capture_process.daemon = True
+                    pcap_capture_process.start()
 
             else:
-            #elif(interfaces != "None"):
-            #elif isinstance(cap, pyshark.LiveCapture) == True:
-                if(tolerance < 5):
-                    time.sleep(0.5)
+                if(tolerance < 20):
+                    time.sleep(1)
                     tolerance= tolerance + 1
                     #print("tolerance 1")
                     continue
@@ -257,18 +260,13 @@ def main(argv):
                 capture_process.terminate()
                 time.sleep(0.1)
                 break
-            #else:
-            #elif isinstance(cap, pyshark.FileCapture) == True:
-            #    print("\nNo more packets in file ", data_source)
-            #    capture_process.terminate()
-            #    time.sleep(0.1)
-            #    break
           
 
         predict_file.close()
         #sd_file.close()
         capture_process.join() 
-        #start_processing.join()
+        if(capturing_packet == True):
+           pcap_capture_process.join()
                    
 
 

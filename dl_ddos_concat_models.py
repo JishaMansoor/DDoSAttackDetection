@@ -151,6 +151,32 @@ def build_model(dataset_name,model_name,input_shape):
         #attention=LayerNormalization()(attention)
         attention = Dense(units=1, activation='sigmoid')(attention)
         attention = Multiply()([bigru, attention])
+        # Define the output layer
+        output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
+        output = Dense(units=1, activation='sigmoid')(output)
+
+        # Define the model
+        model = Model(inputs=model_input, outputs=output)
+    elif(model_name == "STACKED_BI_GRU_CG_L"):
+        # Define the input layer
+        model_input = Input(shape=input_shape,name="inputlayer")
+
+        # Define the masking layer
+        masking = Masking(mask_value=0.0)(model_input)
+
+        # Define the BI_GRU layer
+        bigru = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU") (masking)
+        bigru = LayerNormalization()(bigru)
+        bigru = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU2") (bigru)
+        bigru = LayerNormalization()(bigru)
+        # Define the context vector
+        context = Lambda(lambda x: tf.reduce_mean(x,axis=1)) (bigru)
+
+        # Define the context gating mechanism
+        attention = Dense(units=64, activation='tanh')(context)
+        #attention=LayerNormalization()(attention)
+        attention = Dense(units=1, activation='sigmoid')(attention)
+        attention = Multiply()([bigru, attention])
         attention=LayerNormalization()(attention)
         # Define the output layer
         output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
@@ -172,7 +198,7 @@ def build_model(dataset_name,model_name,input_shape):
         attention = Dense(units=64, activation='tanh')(context)
         attention = Dense(units=1, activation='sigmoid')(attention)
         attention = Multiply()([bl, attention])
-
+        attention=LayerNormalization()(attention)
         # Define the output layer
         output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
         output = Dense(units=1, activation='sigmoid')(output)
@@ -193,11 +219,11 @@ def build_model(dataset_name,model_name,input_shape):
         attention = Dense(units=64, activation='tanh')(context)
         attention = Dense(units=1, activation='sigmoid')(attention)
         attention = Multiply()([bl, attention])
-
+        attention=LayerNormalization()(attention)
         # Define the output layer
         output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
         output = Dense(units=1, activation='sigmoid')(output)
-
+       
         # Define the model
         model = Model(inputs=model_input, outputs=output)
     elif (model_name == "CONVLSTM1D_CG"):
@@ -214,7 +240,7 @@ def build_model(dataset_name,model_name,input_shape):
         attention = Dense(units=64, activation='tanh')(context)
         attention = Dense(units=1, activation='sigmoid')(attention)
         attention = Multiply()([conv, attention])
-
+        attention=LayerNormalization()(attention)
         # Define the output layer
         output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
         output = Dense(units=1, activation='sigmoid')(output)
