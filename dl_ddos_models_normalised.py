@@ -68,7 +68,7 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(Flatten(name='Flatten'))
         #model.add(BatchNormalization())
 
-    elif (model_name == "STACKED_BI_LSTM_ATTN"):
+    elif (model_name == "SBL_A"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_1"))
         model.add(LayerNormalization())
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_2"))
@@ -77,9 +77,9 @@ def build_model(dataset_name,model_name,input_shape):
                        bias_regularizer='l1',
                        attention_regularizer_weight=1e-4,name='Attention1'))
         model.add(LayerNormalization())
-        #model.add(Dropout(0.5))
+        model.add(Dropout(0.5))
         model.add(Flatten())
-    elif (model_name == "BI_LSTM_ATTN_BI_GRU_ATTN"):
+    elif (model_name == "SBLBG_A"):
         model.add(Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_ATTN"))
         model.add(SeqSelfAttention(attention_activation='sigmoid',name='Attention1'))
         model.add(LayerNormalization())
@@ -88,16 +88,11 @@ def build_model(dataset_name,model_name,input_shape):
         model.add(LayerNormalization())
         model.add(Dropout(0.5))
         model.add(Flatten())
-    elif(model_name == "BI_GRU_ATTN_L"):
+    # Final Model for BI_GRU_ATTN
+    elif(model_name == "BI_GRU_ATTN"):
         model.add(Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_GRU_ATTN"))
         model.add(LayerNormalization())
         model.add(SeqSelfAttention(kernel_regularizer='l2', attention_type=SeqSelfAttention.ATTENTION_TYPE_MUL,name='Attention'))
-        model.add(LayerNormalization())
-        model.add(Flatten())
-    elif (model_name == "CONVLSTM1D_L"):
-        kernels=32
-        model.add(ConvLSTM1D(kernels, (3), strides=(1), padding='valid',input_shape=input_shape, kernel_regularizer='l2', name='CONVLSTM1D'))
-        model.add(Activation('relu'))
         model.add(LayerNormalization())
         model.add(Flatten())
     else:
@@ -131,8 +126,8 @@ def main(argv):
 
     parser.add_argument('-e', '--epochs', default=DEFAULT_EPOCHS, type=int,
                         help='Training iterations')
-    parser.add_argument('-mn','--modelname', default="LSTM",type=str,
-            help= 'Model Name. Available Options are LSTM ,BI_LSTM, LSTM_ATTN, BI_LSTM_ATTN, GRU, BI_GRU, BI_GRU_ATTN,CONVLSTM1D,BI_LSTM_ATTN_BI_GRU_ATTN')
+    parser.add_argument('-mn','--modelname', default="BI_GRU_ATTN",type=str,
+            help= 'Model Name. Available Options are SBL_A,SBLBG_A,BI_GRU_ATTN')
 
     parser.add_argument('-a', '--attack_net', default=None, type=str,
                         help='Subnet of the attacker (used to compute the detection accuracy)')
@@ -186,10 +181,7 @@ def main(argv):
             batch_size=1024
             model_name =  dataset_name + "-"+str(args.modelname)
             model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
-            if(str(args.modelname) == "CONVLSTM1D_L"):
-                input_shape=(X_train.shape[1],X_train.shape[2],1)
-            else:
-                input_shape=(X_train.shape[1],X_train.shape[2])
+            input_shape=(X_train.shape[1],X_train.shape[2])
 
             if (args.incremental == True):
                 K.clear_session()

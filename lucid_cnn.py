@@ -242,8 +242,8 @@ def main(argv):
                         avg_time += pt1 - pt0
 
                     avg_time = avg_time / iterations
-
-                    report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,predict_writer)
+                    latency_time=0
+                    report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,latency_time,predict_writer)
                     predict_file.flush()
 
         predict_file.close()

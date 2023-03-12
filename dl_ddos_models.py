@@ -94,7 +94,6 @@ def build_model(dataset_name,model_name,input_shape):
     elif (model_name == "CONVLSTM1D"):
         kernels=32
         model.add(ConvLSTM1D(kernels, (3), strides=(1), padding='valid',input_shape=input_shape, kernel_regularizer='l2', name='CONVLSTM1D'))
-        #model.add(Dropout(0.5))
         model.add(Activation('relu'))
         model.add(Flatten())
     else:
@@ -102,13 +101,8 @@ def build_model(dataset_name,model_name,input_shape):
     model.add(Dense(32, activation = 'relu', kernel_regularizer='l2'))
     model.add(Dense(1, activation = 'sigmoid', kernel_regularizer='l2'))
     print(model.summary())
-    #compileModel(model,0.0001)
     model.compile(loss='binary_crossentropy',optimizer='adam',metrics=['accuracy'])
     return model
-def compileModel(model,lr):
-    # optimizer = SGD(learning_rate=lr, momentum=0.0, decay=0.0, nesterov=False)
-    optimizer = Adam(learning_rate=lr, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
-    model.compile(loss='binary_crossentropy', optimizer=optimizer,metrics=['accuracy'])  # here we specify the loss function
 
 def compileModel(model,lr):
     #optimizer = SGD(learning_rate=lr, momentum=0.0, decay=0.0, nesterov=False)

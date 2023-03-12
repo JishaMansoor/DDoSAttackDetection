@@ -11,8 +11,8 @@ np.random.seed(SEED)
 rn.seed(SEED)
 config = tf.compat.v1.ConfigProto(inter_op_parallelism_threads=1)
 
-from tensorflow.keras.optimizers import Adam,SGD
-from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Conv2D,Bidirectional,LSTM,ConvLSTM1D,GRU,concatenate,BatchNormalization,LayerNormalization,Lambda, Multiply,Masking
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Bidirectional,LSTM,GRU,concatenate,BatchNormalization,LayerNormalization,Lambda, Multiply,Masking
 from tensorflow.keras.layers import Dropout, GlobalMaxPooling2D,GlobalMaxPooling1D,TimeDistributed,InputLayer
 from tensorflow.keras.models import Model, Sequential, load_model, save_model
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
@@ -43,8 +43,8 @@ def build_model(dataset_name,model_name,input_shape):
     K.clear_session()
     model_full_name=dataset_name+"-"+model_name
     model = Sequential(name=model_full_name)
-
-    if (model_name == "BI_LSTM_ATTN_CONCAT_BI_GRU_ATTN"):
+    # Concat Model
+    if (model_name == "HS_BLA_BGA"):
         model1_in= Input(shape=input_shape, name='Left_input')
         model1 = Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN") (model1_in)
         model1=LayerNormalization()(model1)
@@ -63,40 +63,9 @@ def build_model(dataset_name,model_name,input_shape):
         model_concat = Dense(32, activation='relu', name='Dense')(model_concat)
         model_concat = BatchNormalization()(model_concat)
         model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
-        model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
-
-    elif (model_name == "BI_LSTM_ATTN_CONCAT_GM_BI_GRU_ATTN"):
-        model1_in= Input(shape=input_shape, name='Left_input')
-        model1 = Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_LSTM_ATTN") (model1_in)
-        model1=SeqSelfAttention(attention_activation='sigmoid',name='Attention1')(model1)
-        model1 = Dropout(0.5)(model1)
-        model1 = Flatten()(model1)
-        model1 =  Dense(32, activation='relu', name='Dense1')(model1)
-
-        model2_in = Input(shape=input_shape, name='right_input')
-        model2 = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN") (model2_in)
-        model2=SeqSelfAttention(attention_activation='sigmoid',name='Attention2')(model2)
-        model2 = Dropout(0.5)(model2)
-        model2 = GlobalMaxPooling1D()(model2)
-
-        model_concat = concatenate([model1, model2], axis=-1)
-        model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
-        model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
-    elif (model_name =="CONV_CONCAT_BI_GRU"):
-        input_shape1=list(input_shape)
-        input_shape1.append(1)
-        model1_in= Input(shape=input_shape1, name='Left_input')
-        model1 = Conv2D(64, (3,3), strides=(1, 1), input_shape=input_shape, kernel_regularizer='l2',activation='relu', name='conv0')(model1_in)
-        model1 = GlobalMaxPooling2D()(model1)
-        model2_in = Input(shape=input_shape, name='right_input')
-        model2 = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN") (model2_in)
-        model2=SeqSelfAttention(attention_activation='sigmoid',name='Attention2')(model2)
-        model_concat = concatenate([model1, model2], axis=-1)
-        model_concat =Flatten()(model_concat)
-        #model_concat = Dense(32, activation='relu', name='Dense')(model_concat)
-        model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
-        model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
-    elif(model_name == "BI_GRU_CG_L"):
+        model = Model(inputs=[model1_in, model2_in], outputs=model_concat,name=model_full_name)
+    #Model for Bidirectional GRU with Context Gating
+    elif(model_name == "BI_GRU_CG"):
         # Define the input layer
         model_input = Input(shape=input_shape,name="inputlayer")
 
@@ -119,35 +88,9 @@ def build_model(dataset_name,model_name,input_shape):
         output = Dense(units=1, activation='sigmoid')(output)
 
         # Define the model
-        model = Model(inputs=model_input, outputs=output)
-    elif(model_name == "STACKED_BI_GRU_CG_L"):
-        # Define the input layer
-        model_input = Input(shape=input_shape,name="inputlayer")
-
-        # Define the masking layer
-        masking = Masking(mask_value=0.0)(model_input)
-
-        # Define the BI_GRU layer
-        bigru = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU") (masking)
-        bigru = LayerNormalization()(bigru)
-        bigru = Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU2") (bigru)
-        bigru = LayerNormalization()(bigru)
-        # Define the context vector
-        context = Lambda(lambda x: tf.reduce_mean(x,axis=1)) (bigru)
-
-        # Define the context gating mechanism
-        attention = Dense(units=64, activation='tanh')(context)
-        #attention=LayerNormalization()(attention)
-        attention = Dense(units=1, activation='sigmoid')(attention)
-        attention = Multiply()([bigru, attention])
-        attention=LayerNormalization()(attention)
-        # Define the output layer
-        output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
-        output = Dense(units=1, activation='sigmoid')(output)
-
-        # Define the model
-        model = Model(inputs=model_input, outputs=output)
-    elif (model_name == "BI_GRU_ATTN_CONCAT_BI_GRU_CG"):
+        model = Model(inputs=model_input, outputs=output,name=model_full_name)
+    # HS_BGA_BGC (Horizontally stacked Bidirectional GRU with Attention and Context Gating"
+    elif (model_name == "HS_BGA_BGC"):
         model1_in= Input(shape=input_shape, name='Left_input')
         model1=Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN")(model1_in)
         model1=LayerNormalization()(model1)
@@ -176,7 +119,7 @@ def build_model(dataset_name,model_name,input_shape):
         model_concat = BatchNormalization()(model_concat)
         model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
         model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
-    elif(model_name == "STACKED_BI_LSTM_CG"):
+    elif(model_name == "SBL_CG"):
         model_input = Input(shape=input_shape,name="inputlayer")
         masking = Masking(mask_value=0.0)(model_input)
         bl=Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_1")(masking)
@@ -196,8 +139,9 @@ def build_model(dataset_name,model_name,input_shape):
         output = Dense(units=1, activation='sigmoid')(output)
 
         # Define the model
-        model = Model(inputs=model_input, outputs=output)
-    elif(model_name == "STACKED_BLBG_CG"):
+        model = Model(inputs=model_input, outputs=output,name=model_full_name)
+        # SEquential CG
+    elif(model_name == "SBLBG_CG"):
         model_input = Input(shape=input_shape,name="inputlayer")
         masking = Masking(mask_value=0.0)(model_input)
         bl=Bidirectional(LSTM(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),input_shape=input_shape,name="BI_LSTM_1")(masking)
@@ -217,28 +161,7 @@ def build_model(dataset_name,model_name,input_shape):
         output = Dense(units=1, activation='sigmoid')(output)
        
         # Define the model
-        model = Model(inputs=model_input, outputs=output)
-    elif (model_name == "CONVLSTM1D_CG"):
-        model_input = Input(shape=input_shape,name="inputlayer")
-        masking = Masking(mask_value=0.0)(model_input)
-        kernels=32
-        conv=ConvLSTM1D(kernels, (3), strides=(1), padding='valid',kernel_regularizer='l2', name='CONVLSTM1D')(masking)
-        conv=Activation('relu')(conv)
-        conv=LayerNormalization()(conv)
-        # Define the context vector
-        context = Lambda(lambda x: tf.reduce_mean(x,axis=1)) (conv)
-
-        # Define the context gating mechanism
-        attention = Dense(units=64, activation='tanh')(context)
-        attention = Dense(units=1, activation='sigmoid')(attention)
-        attention = Multiply()([conv, attention])
-        attention=LayerNormalization()(attention)
-        # Define the output layer
-        output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
-        output = Dense(units=1, activation='sigmoid')(output)
-
-        # Define the model
-        model = Model(inputs=model_input, outputs=output)
+        model = Model(inputs=model_input, outputs=output,name=model_full_name)
     else:
         print("Unknown Model")
     print(model.summary())
@@ -257,8 +180,8 @@ def main(argv):
 
     parser.add_argument('-e', '--epochs', default=DEFAULT_EPOCHS, type=int,
                         help='Training iterations')
-    parser.add_argument('-mn','--modelname', default="LSTM",type=str,
-            help= 'Model Name. Available Options are LSTM ,BI_LSTM, LSTM_ATTN, BI_LSTM_ATTN, GRU, BI_GRU, BI_GRU_ATTN,CONVLSTM1D')
+    parser.add_argument('-mn','--modelname', default="BI_GRU_CG",type=str,
+            help= 'Model Name. Available Options are HS_BLA_BGA,BI_GRU_CG,HS_BGA_BGC,SBL_CG,SBLBG_CG')
 
     parser.add_argument('-cv', '--cross_validation', default=0, type=int,
                         help='Number of folds for cross-validation (default 0)')
@@ -318,16 +241,12 @@ def main(argv):
             batch_size=1024
             model_name =  dataset_name + "-"+str(args.modelname)
             model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
-            if((str(args.modelname) == "CONVLSTM1D_CG") or (str(args.modelname) == "CONVLSTM1D_ATTN")):
-                input_shape=(X_train.shape[1],X_train.shape[2],1)
-            else:
-                input_shape=(X_train.shape[1],X_train.shape[2])
+            input_shape=(X_train.shape[1],X_train.shape[2])
 
             if (args.incremental == True):
                 K.clear_session()
                 print("incremental training")
                 model = load_model(model_filename+"-Model")
-                #model = load_model(model_filename+".h5")
                 print(model.summary())
                 #model = load_model(model_filename+"-Model")
             else:
@@ -336,7 +255,7 @@ def main(argv):
             es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=PATIENCE)
             model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
             mc = ModelCheckpoint(model_filename + '.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
-            if("_CG" in model_filename and not ("_CONCAT" in model_filename)): 
+            if( not ("HS_" in model_filename)): 
                 model.fit(X_train, Y_train, batch_size=1024, epochs=args.epochs, validation_data=(X_val, Y_val), callbacks=[es, mc])
             else:
                 model.fit([X_train,X_train], Y_train, batch_size=1024, epochs=args.epochs, validation_data=([X_val,X_val], Y_val), callbacks=[es, mc])
@@ -344,7 +263,7 @@ def main(argv):
             model.save(model_filename + '.h5')
             model.save(model_filename+"-Model")
              
-            if("_CG" in model_filename and not ("_CONCAT" in model_filename)):
+            if(not ("HS_" in model_filename)):
                Y_pred_val = (model.predict(X_val) > 0.5)
             else:
                Y_pred_val = (model.predict([X_val,X_val]) > 0.5)
@@ -398,7 +317,7 @@ def main(argv):
             filename = warm_up_file.split('/')[-1].strip()
             if filename_prefix in filename:
                 X, Y = load_dataset(warm_up_file)
-                if("_CG" in model_path and not ("_CONCAT" in model_path)):
+                if( not ("HS_" in model_path)):
                     Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5)
                 else:
                     Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
@@ -414,7 +333,7 @@ def main(argv):
                     avg_time = 0
                     for iteration in range(iterations):
                         pt0 = time.time()
-                        if("_CG" in model_path and not ("_CONCAT" in model_path)):
+                        if(not ("HS_" in model_path)):
                             Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5)
                         else:
                             Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
