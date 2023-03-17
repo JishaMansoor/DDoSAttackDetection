@@ -244,10 +244,7 @@ def main(argv):
             filename_prefix = model_filename.split('-')[0].strip() + '-' + model_filename.split('-')[1].strip() + '-'
             model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
             K.clear_session()
-            if("_ATTN" in model_path):
-                model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention,"MultiHead":MultiHead})
-            else:
-                model = load_model(model_path)
+            model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention,"MultiHead":MultiHead})
 
             # warming up the model (necessary for the GPU)
             warm_up_file = dataset_filelist[0]

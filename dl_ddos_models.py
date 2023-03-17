@@ -242,7 +242,7 @@ def main(argv):
             filename_prefix = model_filename.split('-')[0].strip() + '-' + model_filename.split('-')[1].strip() + '-'
             model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
             K.clear_session()
-            if("_ATTN" in model_path):
+            if("_ATTN" in model_path or "_A" in modelpath):
                 model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention,"MultiHead":MultiHead})
             else:
                 model = load_model(model_path)

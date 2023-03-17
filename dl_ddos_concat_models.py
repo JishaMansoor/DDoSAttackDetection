@@ -118,7 +118,7 @@ def build_model(dataset_name,model_name,input_shape):
         model_concat = Dense(32, activation='relu', name='Dense')(model_concat)
         model_concat = BatchNormalization()(model_concat)
         model_concat = Dense(1, activation='sigmoid', name='outputlayer')(model_concat)
-        model = Model(inputs=[model1_in, model2_in], outputs=model_concat)
+        model = Model(inputs=[model1_in, model2_in], outputs=model_concat,name=model_full_name)
     elif(model_name == "SBL_CG"):
         model_input = Input(shape=input_shape,name="inputlayer")
         masking = Masking(mask_value=0.0)(model_input)
@@ -307,10 +307,7 @@ def main(argv):
             filename_prefix = model_filename.split('-')[0].strip() + '-' + model_filename.split('-')[1].strip() + '-'
             model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
             K.clear_session()
-            if("_ATTN" in model_path):
-                model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
-            else:
-                model = load_model(model_path)
+            model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
 
             # warming up the model (necessary for the GPU)
             warm_up_file = dataset_filelist[0]
@@ -382,12 +379,7 @@ def main(argv):
         time_window = int(filename_prefix.split('t-')[0])
         max_flow_len = int(filename_prefix.split('t-')[1].split('n-')[0])
         model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
-        if("_ATTN" in model_path):
-             model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
-        else:
-             model = load_model(args.model)
-
-        mins, maxs = static_min_max(time_window)
+        model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention})
 
         while (True):
             samples = process_live_traffic(cap, args.dataset_type, labels, max_flow_len, traffic_type="all", time_window=time_window)
@@ -421,7 +413,6 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
     if Y_true is not None and len(Y_true.shape) > 0:  # if we have the labels, we can compute the classification accuracy
         Y_true = Y_true.reshape((Y_true.shape[0], 1))
         accuracy = accuracy_score(Y_true, Y_pred)
-
         f1 = f1_score(Y_true, Y_pred)
         tn, fp, fn, tp = confusion_matrix(Y_true, Y_pred, labels=[0, 1]).ravel()
         tnr = tn / (tn + fp)

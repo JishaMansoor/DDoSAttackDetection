@@ -77,7 +77,8 @@ def start_pcap_capture(interfaces):
     file=OUTPUT_FOLDER + 'captures-' + time.strftime("%Y%m%d-%H%M%S") +".pcap"
     output = open(file, "w")
     timeouttime = 60
-    capture = pyshark.LiveCapture(interface=interfaces, output_file=file)
+    capture = pyshark.LiveCapture( output_file=file)
+    capture.interfaces = interfaces
     capture.sniff(timeout=timeouttime)
     output.close()
 # Capturing unit
@@ -185,7 +186,6 @@ def main(argv):
             #cap =  pyshark.LiveCapture()
             queue = Queue()
             interfaces = str(args.predict_live).split(',')
-            #cap.interfaces = interfaces
             data_source = args.predict_live
             pcap_file="None"
         capture_process = Process(target=start_live_capture, args=(queue,interfaces,pcap_file))
@@ -210,11 +210,7 @@ def main(argv):
         max_flow_len = int(filename_prefix.split('t-')[1].split('n-')[0])
         model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
         K.clear_session()
-        if("_ATTN" in model_path):
-             model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention,"MultiHead":MultiHead})
-        else:
-             model = load_model(args.model)
-
+        model = load_model(model_path,custom_objects={"SeqSelfAttention": SeqSelfAttention,"MultiHead":MultiHead})
         mins, maxs = static_min_max(time_window)
         tolerance=0
         capturing_packet = False
@@ -230,7 +226,7 @@ def main(argv):
 
                 X = np.expand_dims(X, axis=3)
                 pt0 = time.time()
-                if("_CONCAT" in model_path):
+                if("HS_" in model_path):
                     Y_pred = np.squeeze(model.predict([X,X], batch_size=2048) > 0.6,axis=1)
                 else:
                     Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.6,axis=1)
@@ -246,7 +242,8 @@ def main(argv):
                 ddos_rate = (sum(Y_pred) / Y_pred.shape[0])
                 if((interfaces != "None") and (ddos_rate > .01 )and (capturing_packet == False)):
                     capturing_packet= True
-                    pcap_capture_process = Process(target=start_pcap_capture, args=(interfaces))
+                    interfaces = str(args.predict_live).split(',')
+                    pcap_capture_process = Process(target=start_pcap_capture, args=(interfaces,))
                     pcap_capture_process.daemon = True
                     pcap_capture_process.start()
 
