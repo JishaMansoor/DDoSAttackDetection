@@ -83,6 +83,7 @@ def build_model(dataset_name,model_name,input_shape):
         #attention=LayerNormalization()(attention)
         attention = Dense(units=1, activation='sigmoid')(attention)
         attention = Multiply()([bigru, attention])
+        attention = LayerNormalization()(attention)
         # Define the output layer
         output = concatenate([context, Lambda(lambda x: tf.reduce_mean(x, axis=1))(attention)])
         output = Dense(units=1, activation='sigmoid')(output)
@@ -95,6 +96,7 @@ def build_model(dataset_name,model_name,input_shape):
         model1=Bidirectional(GRU(32, activation='tanh', kernel_regularizer='l2',return_sequences='true'),name="BI_GRU_ATTN")(model1_in)
         model1=LayerNormalization()(model1)
         model1=SeqSelfAttention(attention_activation='sigmoid',name='Attention1')(model1)
+        model1=LayerNormalization()(model1)
         #model1 = Dropout(0.5)(model1)
         model1 = Flatten()(model1)
 
@@ -255,7 +257,7 @@ def main(argv):
             es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=PATIENCE)
             model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
             mc = ModelCheckpoint(model_filename + '.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
-            if( not ("HS_" in model_filename)): 
+            if( not ("HS_" in model_filename )): 
                 model.fit(X_train, Y_train, batch_size=1024, epochs=args.epochs, validation_data=(X_val, Y_val), callbacks=[es, mc])
             else:
                 model.fit([X_train,X_train], Y_train, batch_size=1024, epochs=args.epochs, validation_data=([X_val,X_val], Y_val), callbacks=[es, mc])
@@ -263,7 +265,7 @@ def main(argv):
             model.save(model_filename + '.h5')
             model.save(model_filename+"-Model")
              
-            if(not ("HS_" in model_filename)):
+            if(not ("HS_" in model_filename )):
                Y_pred_val = (model.predict(X_val) > 0.5)
             else:
                Y_pred_val = (model.predict([X_val,X_val]) > 0.5)
@@ -314,7 +316,7 @@ def main(argv):
             filename = warm_up_file.split('/')[-1].strip()
             if filename_prefix in filename:
                 X, Y = load_dataset(warm_up_file)
-                if( not ("HS_" in model_path)):
+                if( not ("HS_" in model_path )):
                     Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5)
                 else:
                     Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)
@@ -330,7 +332,7 @@ def main(argv):
                     avg_time = 0
                     for iteration in range(iterations):
                         pt0 = time.time()
-                        if(not ("HS_" in model_path)):
+                        if(not ("HS_" in model_path )):
                             Y_pred = np.squeeze(model.predict(X, batch_size=1024) > 0.5)
                         else:
                             Y_pred = np.squeeze(model.predict([X,X], batch_size=1024) > 0.5)

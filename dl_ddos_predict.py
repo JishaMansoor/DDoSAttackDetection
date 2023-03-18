@@ -226,7 +226,7 @@ def main(argv):
 
                 X = np.expand_dims(X, axis=3)
                 pt0 = time.time()
-                if("HS_" in model_path):
+                if("HS_" in model_path or "_CONCAT" in model_path):
                     Y_pred = np.squeeze(model.predict([X,X], batch_size=2048) > 0.6,axis=1)
                 else:
                     Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.6,axis=1)
