@@ -1,3 +1,4 @@
+# Code for Model Building .This file cntains Models which uses Concat functions
 # Author: Jisha C U
 # Project: CYBER SECURITY: NEAR REAL TIME DDoS CYBER ATTACK DETECTION USING DEEP LEARNING METHODS
 #
