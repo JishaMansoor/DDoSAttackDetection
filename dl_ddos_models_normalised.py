@@ -1,4 +1,4 @@
-
+# code for Models with Layer and Batch normalized applied
 # Author: Jisha C U
 # Project: CYBER SECURITY: NEAR REAL TIME DDoS CYBER ATTACK DETECTION USING DEEP LEARNING METHODS
 #
