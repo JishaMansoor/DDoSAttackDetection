@@ -93,7 +93,7 @@ def start_live_capture(queue,interfaces,pcap_file):
     if isinstance(cap, pyshark.LiveCapture) == True:
         while(True):
             start_time = time.time()
-            time_window =start_time +20 
+            time_window =start_time + 10 
             for pkt in cap.sniff_continuously():
                pf = parse_packet(pkt)
                queue.put(pf)
