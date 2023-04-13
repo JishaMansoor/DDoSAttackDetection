@@ -1,6 +1,6 @@
-# Copyright (c) 2022 @ FBK - Fondazione Bruno Kessler
-# Author: Roberto Doriguzzi-Corin
-# Project: LUCID: A Practical, Lightweight Deep Learning Solution for DDoS Attack Detection
+# Modified lucid_dataset_parser.py for Live Prediction System
+# Author: Jisha C U
+# Project: CYBER SECURITY: NEAR REAL TIME DDoS CYBER ATTACK DETECTION USING DEEP LEARNING METHODS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,10 +27,6 @@ from sklearn.feature_extraction.text import CountVectorizer
 from multiprocessing import Process, Manager, Value, Queue
 from util_functions import *
 
-# Sample commands
-# split a pcap file into smaller chunks to leverage multi-core CPUs: tcpdump -r dataset.pcap -w dataset-chunk -C 1000
-# dataset parsing (first step): python3 lucid_dataset_parser.py --dataset_type SYN2020 --dataset_folder ./sample-dataset/ --packets_per_flow 10 --dataset_id SYN2020 --traffic_type all --time_window 10
-# dataset parsing (second step): python3 lucid_dataset_parser.py --preprocess_folder ./sample-dataset/
 
 IDS2018_DDOS_FLOWS = {'attackers': ['18.218.115.60', '18.219.9.1','18.219.32.43','18.218.55.126','52.14.136.135','18.219.5.43','18.216.200.189','18.218.229.235','18.218.11.51','18.216.24.42'],
                       'victims': ['18.218.83.150','172.31.69.28']}

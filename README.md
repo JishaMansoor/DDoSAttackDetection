@@ -140,7 +140,7 @@ To train model using Global Max pool , use dl_ddos_models_max_pool.py
 
 - ```-t```, ```--train```: Starts the training process and specifies the folder with the dataset
 - ```-e```, ```--epochs ```: Maximum number of training epochs for each set of hyperparameters (default=1000)
-     -mn  ,    --modelname : Build the specified model .Default is LSTM and other supported values are BI_LSTM, LSTM_ATTN, BI_LSTM_ATTN, GRU, BI_GRU, BI_GRU_ATTN,CONVLSTM1D,BI_LSTM_ATTN_GRU
+     -mn  ,    --modelname : Build the specified model .Default is LSTM and other supported values are LSTM ,BI_LSTM, LSTM_ATTN, BI_LSTM_ATTN, GRU, BI_GRU, BI_GRU_ATTN,CONVLSTM1D,BI_LSTM_ATTN_BI_GRU_ATTN
 
 ### The training process
 
@@ -164,6 +164,17 @@ Where the prefix 10t-10n indicates the values of hyperparameters ```time window`
 Model	                Samples	Accuracy  F1Score	Hyper-parameters	Validation Set
 IDS201X-BILSTMi-ATTN	247334	0.9892	   0.9893       ""	   	./final_dataset/10t-10n-IDS201X-dataset-val.hdf5
 
+For More stable Models following can be used
+python3 dl_ddos_concat_models.py --train ~/final_data_syn --modelname HS_BLA_BGA
+python3 dl_ddos_concat_models.py --train ~/final_data_syn --modelname HS_BGA_BGC
+python3 dl_ddos_concat_models.py --train ~/final_data_syn --modelname BI_GRU_CG
+python3 dl_ddos_models_normalised.py --train ~/final_data_syn --modelname SBL_A
+python3 dl_ddos_models_normalised.py  --train ~/final_data_syn --modelname BI_GRU_ATTN
+python3 dl_ddos_concat_models.py --train ~/final_data_syn --modelname SBL_CG
+
+python3 dl_ddos_concat_models.py --train ~/final_data_syn --modelname SBLBG_CG
+python3 dl_ddos_models_normalised.py  --train ~/final_data_syn --modelname SBLBG_A
+python3 dl_ddos_models.py  --train ~/final_data_syn --modelname CONVLSTM1D
 ## Testing
 
 Testing means evaluating a trained model of LUCID with unseen data (data not used during the training and validation steps), such as the test set in the ```sample-dataset``` folder. For this process,  the ```lucid_cnn.py``` provides a different set of options:
@@ -177,6 +188,13 @@ To test DL MODELS , run the following command:
 ```
 python3 dl_ddos_models.py --predict ./<datasetfoldernamewhere test data is present>/ --model ./output/10t-10n-IDS201X-BI_LSTM_ATTN.h5
 python3 dl_ddos_models_max_pool.py --predict ./<datasetfoldernamewhere test data is present>/ --model ./output/10t-10n-IDS201X-GM-BI_LSTM_ATTN.h5
+python3 dl_ddos_concat_models.py --predict ~/final_data_syn --model output/10t-10n-IDS201X-BI_GRU_CG.h5 
+python3 dl_ddos_concat_models.py --predict ~/final_data_syn --model output/10t-10n-IDS201X-BI_GRU_ATTN.h5 
+python3 dl_ddos_concat_models.py --predict ~/final_data_syn --model output/10t-10n-IDS201X-BI_GRU_CG.h5 
+python3 dl_ddos_models_normalised.py --predict ~/final_data_syn --model output/10t-10n-IDS201X-BI_GRU_CG.h5 
+python3 dl_ddos_concat_models.py --predict ~/final_data_syn --model output/10t-10n-IDS201X-BI_GRU_ATTN.h5 
+python3 dl_ddos_models_normalised.py --predict ~/final_data_syn --model output/10t-10n-IDS201X-HS_BGA_BGC.h5 
+ python3 dl_ddos_concat_models.py --predict ~/final_data_syn --model output/10t-10n-IDS201X-HS_BGA_BGC.h5   
 ```
 
 The output printed on the terminal and saved in a text file in the ```output``` folder in the following format:
@@ -188,6 +206,7 @@ IDS201X-BI_LSTM_ATTN,4.469,980437,274813,0.505,0.9938,0.9938,0.9964,0.0088,0.991
 Where ```Time``` is the execution time on a test set.  The values of ```Packets``` and ```Samples``` are the the total number of packets and samples in the test set respectively. More precisely, ```Packets``` is the total amount of packets represented in the samples (traffic flows) of the test set. ```Accuracy```, ```F1```, ```PPV```  are classification accuracy, F1 and precision scores respectively, ```TPR```, ```FPR```, ```TNR```, ```FNR``` are the true positive, false positive, true negative and false negative rates respectively. 
 
 The last column indicates the name of the test set used for the prediction test. Note that the script loads and process all the test sets in the folder specified with option ``` --predict``` (identified with the suffix ```test.hdf5```). This means that the output might consist of multiple lines, on for each test set. 
+
 
 ## Online Inference
 
@@ -207,6 +226,8 @@ If the argument of ```predict_live``` option is a network interface, DL_MODELS w
 
 ```
 python3 dl_ddos_predict.py --predict_live eth0 --model ./output/10t-10n-IDS201X-BI_LSTM_ATTN.h5 --dataset_type SYN2020 
+
+
 ```
 
 Where ```eth0``` is the name of the network interface, while ```dataset_type``` indicates the address scheme of the traffic. This is optional and, as written above, it is only used to obtain the ground truth labels needed to compute the classification accuracy.
